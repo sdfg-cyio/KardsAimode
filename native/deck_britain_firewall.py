@@ -14,6 +14,7 @@ from cards_britain import meteor_value
 NAME = 'britain_firewall'
 DECK_CODE = '%%25|0B0d0D0E0j0m0w0z191GbPgvj1lryJ;0n0sbuhDtU;080o;losC'
 HQ = 'card_location_london'
+TITLE = '英美防火墙'
 COMMANDER = '大吉岭'
 AVATAR = 'avatar_land_girl'             # 土地女孩
 MAIN, ALLY = 'Britain', 'usa'

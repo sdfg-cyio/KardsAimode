@@ -10,7 +10,8 @@ from live_ai import guarded
 NAME = 'japan_legion'
 DECK_CODE = '%%38|5C6BhHphqDrks0tyuywXx3znzv;E7iDmatGzizs;7etK;E9pg'
 HQ = 'card_location_manila'
-COMMANDER = '西绢代'
+TITLE = '日波军团'
+COMMANDER = '玛莉亚·临光'
 AVATAR = 'avatar_cadet_nurse'           # 学员护士
 MAIN, ALLY = 'Japan', 'poland'
 

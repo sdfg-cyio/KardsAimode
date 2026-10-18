@@ -10,7 +10,8 @@ NAME = 'britain_meteor'
 # 2026-10-15 用户卡组，两张第 2 西非旅换成雷达警报（原本配合研发牌，研发删了后鸡肋）
 DECK_CODE = '%%2a|0B0i0mgvoooysQsTtVw8yJ;0l1VDJ0rqYy7ycyH;DLtTwbyd;'
 HQ = 'card_location_tunis_city'
-COMMANDER = '阿萨姆'
+TITLE = '英澳流星'                      # 用户这次没给新名，沿用
+COMMANDER = '阿尔托莉雅·潘德拉贡'
 AVATAR = 'avatar_ats'                   # 本土辅助服务团
 MAIN, ALLY = 'Britain', 'anzac'
 

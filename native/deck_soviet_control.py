@@ -4,6 +4,7 @@
 NAME = 'soviet_control'
 DECK_CODE = '%%47|8C919bDZg6h3jWmtpkppqLqTrjvewqxmyX;9a9xfrfXhGjMmToYwowSz0;;'
 HQ = 'card_location_bryansk_waw'
+TITLE = '苏意控'
 COMMANDER = '喀秋莎'
 AVATAR = 'avatar_to_arms'               # 拿起武器
 MAIN, ALLY = 'Soviet', 'italy'

@@ -1,4 +1,4 @@
-# 打法：美国 + 法国 “行动费 3+” 进攻（指挥部 瑟堡）
+# 打法：美国 + 法国 “行动费 3+” 进攻（指挥部 阿拉库尔）
 # 思路（2026-10-17 与用户讨论）：要下单位、积极威胁对方。行动费 >= 3 的步兵串联：
 # 第 13 工兵营加槽、骇人步兵团抽牌、第 2 密歇根回 2 费、B-24D 便宜 3 费、散兵团给总部加防；
 # 永先者团让新上场的步兵当回合免费行动（照样触发密歇根）；第 116 步兵团给游骑兵/骇人这类同名卡全体 +5+5。
@@ -8,8 +8,9 @@ import sim_rules as R
 
 NAME = 'usa_assault'
 DECK_CODE = '%%56|bEbmDBdkEbfGoaocpCtYv6vc;2lgJgQofq6r6rT;DOlgo7;bK'
-HQ = 'card_location_cherbourg'        # 用户指定（2026-10-17）
-COMMANDER = '娜奥米'                    # 用户让我起
+HQ = 'card_location_arracourt'        # 用户指定（2026-10-18 由瑟堡改为阿拉库尔，两者都无特效）
+TITLE = '美法高油'
+COMMANDER = '凯伊'
 AVATAR = 'avatar_stars_and_stripes'
 MAIN, ALLY = 'USA', 'france'
 

@@ -6,7 +6,8 @@ NAME = 'germany_ramp'
 # 2026-10-15 用户改版：-三号坦克 -1 老兔子 -1 战争机器，+第 22 步兵团 +前线与家乡 +1 恩尼格玛（缓解缺牌）
 DECK_CODE = '%%15|2Q2S313b3N3Q4F4zbJeYoTqftctgwCwL;2Z3j3Xbqv7vhzd;bKbPq8;'
 HQ = 'card_location_ardennes_waw'   # 用户指定（2026-10-15）；总部都没有特效
-COMMANDER = '西住真穗'
+TITLE = '德美跳'
+COMMANDER = '逸见艾丽卡'
 AVATAR = 'avatar_blitzmadel'            # 闪电女孩
 MAIN, ALLY = 'Germany', 'usa'
 

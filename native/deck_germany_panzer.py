@@ -9,7 +9,8 @@ import sim_rules as R
 NAME = 'germany_panzer'
 DECK_CODE = '%%19|2S303NE1wC;2Z3XrKzd;3f4vE4nlxoza;uxxp'
 HQ = 'card_location_villers_bocage'   # 用户指定（2026-10-16）
-COMMANDER = '米卡'                      # 用户没指定，暂定（芬兰盟国）
+TITLE = '德芬车'
+COMMANDER = '艾拉·伊尔玛塔'
 AVATAR = 'avatar_blitzkrieg'
 MAIN, ALLY = 'Germany', 'finland'
 

@@ -4,7 +4,8 @@
 NAME = 'usa_ramp'
 DECK_CODE = '%%52|bCbEbncpcPcZdkfGmPtYv6vXwdyv;0lbIbPbqcWv7w8081w;1V;bK'
 HQ = 'card_location_washington_waw'
-COMMANDER = '凯伊'                      # 对局里 AI 的玩家名
+TITLE = '美英跳'                        # 卡组中文名（文档里用；对局里的套牌名仍是 AI-{NAME}）
+COMMANDER = '生盐诺亚'                  # 对局里 AI 的玩家名
 AVATAR = 'avatar_rosie'                 # 头像（游戏自带的 avatar_* 物品 id）：铆工罗茜
 MAIN, ALLY = 'USA', 'britain'
 

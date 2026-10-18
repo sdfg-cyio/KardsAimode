@@ -39,17 +39,17 @@ kards                 # 默认：从所有卡组中随机，连续 3 局不重�
 kards usa_ramp        # 固定某一套
 ```
 
-| 名称 | 卡组 |
-|---|---|
-| usa_ramp | 美英加费控制 |
-| usa_assault | 美法“行动费 3+”进攻 |
-| germany_ramp | 德美加费 |
-| germany_panzer | 德芬“车车” |
-| soviet_control | 苏意控制 |
-| japan_legion | 日波汝即军团 |
-| japan_burst | 日法“手牌爆炸” |
-| britain_meteor | 英澳流星 |
-| britain_firewall | 英美 Firewall 堡垒 |
+| 名称 | 卡组 | 指挥官 | 总部 |
+|---|---|---|---|
+| usa_ramp | 美英跳 | 生盐诺亚 | 华盛顿 |
+| usa_assault | 美法高油 | 凯伊 | 阿拉库尔 |
+| germany_ramp | 德美跳 | 逸见艾丽卡 | 阿登 |
+| germany_panzer | 德芬车 | 艾拉·伊尔玛塔 | 维莱博卡日 |
+| soviet_control | 苏意控 | 喀秋莎 | 布良斯克 |
+| japan_legion | 日波军团 | 玛莉亚·临光 | 马尼拉 |
+| japan_burst | 日法爆牌 | 押田流歌 | 碧瑶 |
+| britain_meteor | 英澳流星 | 阿尔托莉雅·潘德拉贡 | 突尼斯城 |
+| britain_firewall | 英美防火墙 | 大吉岭 | 伦敦 |
 
 ## 更新
 

@@ -9,7 +9,8 @@ import sim_rules as R
 NAME = 'japan_burst'
 DECK_CODE = '%%36|2h5C5U5x637xE8gQimjjlfmcqtrkx9zn;2l5OfcgJjOmap9rQ;qz;oG'
 HQ = 'card_location_baguio'           # 用户指定（2026-10-17）：特鲁克没有正式版
-COMMANDER = '福田'                      # 我起的
+TITLE = '日法爆牌'
+COMMANDER = '押田流歌'
 AVATAR = 'avatar_samurai'
 MAIN, ALLY = 'Japan', 'france'
 
