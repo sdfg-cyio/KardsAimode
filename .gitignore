@@ -1,0 +1,23 @@
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 运行时产生的文件（日志、对手轮换记录、客户端上报）
+*.log
+proxy/ai_mix_history.json
+proxy/client_logger.txt
+proxy/*.txt
+kardsai_logs/
+
+# 安装包与签名（apk 另行分发，不进仓库）
+*.apk
+*.keystore
+*.jks
+*.obb
+*.pak
+
+# 编辑器/系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
