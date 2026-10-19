@@ -102,8 +102,14 @@ def _invasion(sim, c, t, k):
 
 
 card(P + 'the_war_machine', play=lambda sim, c, t, k: R.gain_slot(sim, c.side, 1))
-card(P + 'war_bonds', play=lambda sim, c, t, k: (R.gain_slot(sim, c.side, 2),
-                                                 setattr(sim, 'bonus', sim.bonus + R.DRAW_V * 0.8)))
+def _war_bonds(sim, c, t, k):
+    R.gain_slot(sim, c.side, 2)
+    sim.bonus += R.DRAW_V * 0.8                  # 下回合多抽一张的价值（爆不爆由 planner.evaluate 按 extra_draw 算）
+    if c.side == sim.me:
+        sim.extra_draw = getattr(sim, 'extra_draw', 0) + 1
+
+
+card(P + 'war_bonds', play=_war_bonds)
 card(P + 'us_military_research', choose_one=True,
      play=research(P + 'depth_charges', P + 'expanded_us_research'))
 card(P + 'expanded_us_research', choose_one=True,

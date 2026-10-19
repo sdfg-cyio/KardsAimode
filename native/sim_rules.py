@@ -135,6 +135,11 @@ def add_hand(sim, side, name, cid=None):
     """手牌加一张牌（满了就丢弃）；cid = 回手的原卡 id（不给则是新生成的牌）"""
     d = sim.side[side]
     if hand_room(sim, side) <= 0:
+        if side == sim.me:
+            # 我方手牌满了还往手里加牌（护航给的生产/计划等）：这张直接丢掉。
+            # 原来不计代价，满手时打护航之类的牌看起来“白赚”（用户 2026-10-19：英国卡组满手还打护航）
+            plan = sim.ctx.get('plan')
+            sim.bonus -= getattr(plan, 'BURN_V', 1.0)
         return None
     c = SC.new(name, side, sim.new_id() if cid is None else cid, 'hand_' + side)
     d['hand'].append(c)

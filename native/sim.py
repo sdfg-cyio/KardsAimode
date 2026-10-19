@@ -130,6 +130,8 @@ class Sim:
         self.fatigue = dict(self.memo.get('fatigue', {}))
         self.deck_add = {}                                      # 本步往牌库塞了几张（驱动累计）
         self.burned = {}                                        # 本步爆掉几张（驱动从牌库估算里扣掉）
+        # 我方下回合开始额外多抽几张（战争债券）：本回合内跨步骤记在 TurnLog，结束回合时算爆牌要用
+        self.extra_draw = getattr(tlog, 'extra_draw', 0) or 0
         # 对方埋下、还挂着的反制卡名（驱动记 memo['en_planted'] = {卡id: 卡名}；卡还在对方手牌里才算挂着）
         e_ids = {c.id for c in self.side[other(me)]['hand']}
         self.en_cm = {n for i, n in (self.memo.get('en_planted') or {}).items() if i in e_ids}

@@ -136,6 +136,7 @@ class TurnLog:
         self.once = set()          # 本回合已触发过的“每回合一次”效果（第 158 补给营加费）
         self.gone = set()          # 本回合已打出的手牌 id（快照里可能还在手牌列表，如埋下的反制卡）
         self.cm_names = set()      # 本回合埋下的反制卡名
+        self.extra_draw = 0        # 下回合开始额外多抽几张（战争债券）
         self.intel_seen = 0        # 本回合打情报牌看过的对方牌数
         self.forecasts = []        # 本回合预报的选择 [(天气, 档位)]
         self.weather_played = False  # 本回合已打过天气牌
@@ -164,6 +165,7 @@ class TurnLog:
                 self.memo['op_count'] = dict(sim.op_count)   # 累计行动次数：跨步骤、跨回合
             self.once = set(sim.once)
             self.cm_names = set(getattr(sim, 'cm_names', ()))
+            self.extra_draw = getattr(sim, 'extra_draw', 0)
             self.intel_seen = getattr(sim, 'intel_seen', 0)
             self.forecasts = list(getattr(sim, 'forecasts', ()))
             self.weather_played = getattr(sim, 'weather_played', False)

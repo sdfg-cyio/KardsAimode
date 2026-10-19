@@ -165,10 +165,12 @@ def evaluate(sim, plan, ctx):
         v -= W['threat'] * (T / H * 2 + 12 / (left + 1) ** 1.2 * min(1, T / 4))
     # 本回合结束就会被弃掉的手牌（长久围困抽的牌，到期那回合）：留着没价值，能打就打
     v += sum(plan.hold(sim, c, ctx) for c in my['hand'] if c.name != UNKNOWN and c.id not in sim.expiring)
-    if R.hand_room(sim, me) <= 0:
-        # 下回合自然抽牌会爆：白丢一张牌（DRAW_V）再加一点余量，
+    # 下回合开始要抽几张：自然抽 1 + 战争债券这类额外抽牌（原来只按 1 张算，满 8 张打债券看不出下回合会爆）
+    over = 1 + getattr(sim, 'extra_draw', 0) - R.hand_room(sim, me)
+    if over > 0:
+        # 每爆一张：白丢一张牌（DRAW_V）再加一点余量，
         # 让 AI 在满手还剩指挥点时，倾向于先打掉一张留着价值最低的便宜牌
-        v -= R.DRAW_V + 0.5 + getattr(plan, 'BURN_V', 1.0)
+        v -= over * (R.DRAW_V + 0.5 + getattr(plan, 'BURN_V', 1.0))
     v += W['front'] * ((1 if my['front'] else 0) - (1 if en['front'] else 0))
     extra = getattr(plan, 'eval_extra', None)   # 卡组自己的局面项（如防火墙卡组：总部堆到 30 才能英联邦）
     if extra is not None:
