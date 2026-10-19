@@ -13,6 +13,26 @@ LOCAL = {}  # match_id -> LocalMatch
 OPTION_OVERRIDES = {'skip_sending_subactions': 0}
 
 UP_HOST, UP_PORT = 'ovo.wards.mom', 5233
+# 2026-10-19 私服域名的 DNS 记录被删了（各家 DNS 都返回不存在），但服务器本身还在：
+# 直接连 IP、请求头 Host 仍写域名就能用（服务器前面有 CDN，按 Host 分流，不带域名会返回人机验证页）。
+# 所以只把“连哪个地址”换成 IP，Host 头照旧。IP 来自抓包；环境变量 KARDS_UP_IP 可改
+UP_IP_FALLBACK = '43.199.188.3'
+
+
+def _pick_up_addr():
+    """连接用的地址：域名能解析就用域名（服务器换 IP 时跟着变），解析不了用备用 IP"""
+    import os, socket
+    env = os.environ.get('KARDS_UP_IP')
+    if env:
+        return env
+    try:
+        socket.getaddrinfo(UP_HOST, UP_PORT)
+        return UP_HOST
+    except OSError:
+        return UP_IP_FALLBACK
+
+
+UP_ADDR = _pick_up_addr()
 
 
 def _pick_up_proxy():
@@ -25,7 +45,7 @@ def _pick_up_proxy():
         h, _, p = env.rpartition(':')
         return h, int(p)
     try:
-        socket.create_connection((UP_HOST, UP_PORT), timeout=5).close()
+        socket.create_connection((UP_ADDR, UP_PORT), timeout=5).close()
         return None
     except OSError:
         pass
@@ -113,9 +133,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if UP_PROXY:
             ph, pp = UP_PROXY
             conn = http.client.HTTPConnection(ph, pp, timeout=30)
-            target = f'http://{UP_HOST}:{UP_PORT}{self.path}'
+            target = f'http://{UP_ADDR}:{UP_PORT}{self.path}'
         else:
-            conn = http.client.HTTPConnection(UP_HOST, UP_PORT, timeout=30)
+            conn = http.client.HTTPConnection(UP_ADDR, UP_PORT, timeout=30)
             target = self.path
         try:
             conn.request(self.command, target, body=body, headers=hdrs)
@@ -224,9 +244,9 @@ def _tell_upstream_end(path, body, hdrs=None):
         try:
             if UP_PROXY:
                 conn = http.client.HTTPConnection(*UP_PROXY, timeout=15)
-                target = f'http://{UP_HOST}:{UP_PORT}{path}'
+                target = f'http://{UP_ADDR}:{UP_PORT}{path}'
             else:
-                conn = http.client.HTTPConnection(UP_HOST, UP_PORT, timeout=15)
+                conn = http.client.HTTPConnection(UP_ADDR, UP_PORT, timeout=15)
                 target = path
             h = dict(hdrs or {'Content-Type': 'application/json'})
             h['Host'] = f'{UP_HOST}:{UP_PORT}'
@@ -241,5 +261,6 @@ def _tell_upstream_end(path, body, hdrs=None):
 
 if __name__ == '__main__':
     srv = http.server.ThreadingHTTPServer(('127.0.0.1', LISTEN_PORT), Handler)
-    log('kards proxy listening', LISTEN_PORT, '->', UP_HOST, UP_PORT)
+    log('kards proxy listening', LISTEN_PORT, '->', UP_HOST, UP_PORT,
+        '' if UP_ADDR == UP_HOST else f'（域名解析不了，直连 {UP_ADDR}）')
     srv.serve_forever()
