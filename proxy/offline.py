@@ -71,8 +71,8 @@ def _not_found(method, path):
     return _json(404, {'message': f'Cannot {method} {path.split("?")[0]}', 'error': 'Not Found', 'statusCode': 404})
 
 
-def handle(method, path, body, log):
-    """离线回应一个请求：返回 (状态码, 响应头列表, 响应体字节)"""
+def handle(method, path, body, log, auth=False):
+    """离线回应一个请求：返回 (状态码, 响应头列表, 响应体字节)。auth = 请求带了登录凭证（Authorization 头）"""
     with _lock:
         try:
             req = json.loads(body) if body else None
@@ -82,6 +82,8 @@ def handle(method, path, body, log):
         st = _load()
         if method == 'POST' and p == '/session':
             return _session()
+        if method == 'GET' and p == '/' and auth:
+            return _root_auth()
         if method == 'POST' and p == '/singleplayerlobby':
             pid = (req or {}).get('player_id')
             _pending[pid] = (req or {}).get('deck_id')
@@ -119,6 +121,30 @@ def handle(method, path, body, log):
             _missing.add(key)
             log(f'[offline] 录档里没有 {key}，回 404（游戏如果因此出问题，联网时补录这个接口）')
         return _not_found(method, path)
+
+
+def _root_auth():
+    """登录后的 GET /：带 current_user（登录凭证里的身份）和 my_* 地址。
+    客户端登录后会再要一次，拿到未登录那份（current_user 为空）就卡在登录界面（2026-10-20 实测）。
+    录到了就用录档，没录到就照抓包里的格式拼（未登录那份 + 登录回应里的账号）"""
+    r = _rec('GET / (auth)')
+    if r is not None:
+        return r['status'], [('Content-Type', 'application/json')], _body_bytes(r.get('body'))
+    root = copy.deepcopy(_rec('GET /')['body'])
+    sess = _rec('POST /session') or {}
+    s, q = sess.get('body') or {}, sess.get('request') or {}
+    pid = s.get('player_id')
+    now = int(datetime.datetime.now().timestamp())
+    root['current_user'] = {
+        'client_id': s.get('client_id', pid), 'exp': now + 30 * 86400, 'external_id': q.get('username', ''),
+        'iat': now, 'identity_id': s.get('user_id', pid), 'iss': 'fyserver', 'jti': s.get('jti', ''),
+        'language': q.get('language', 'zh-Hans'), 'payment': 'notavailable', 'player_id': str(pid),
+        'provider': q.get('provider', 'device_id'), 'roles': [], 'tier': 'LIVE', 'user_id': s.get('user_id', pid),
+        'user_name': q.get('username', '')}
+    ep = root.get('endpoints') or {}
+    base = ep.get('root', 'http://127.0.0.1:5233')
+    ep.update(my_draft=f'{base}/draft/{pid}', my_items=f'{base}/items/{pid}', my_player=f'{base}/players/{pid}')
+    return _json(200, root)
 
 
 def _session():

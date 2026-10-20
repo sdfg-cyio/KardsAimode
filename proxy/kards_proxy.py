@@ -158,7 +158,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         try:
             if OFFLINE:
                 # 单机保留地：不连私服，由 offline 模块按录档和本地状态回应
-                status, rheaders, data = offline.handle(self.command, self.path, body, log)
+                status, rheaders, data = offline.handle(self.command, self.path, body, log,
+                                                        auth=bool(self.headers.get('Authorization')))
                 reason = ''
             else:
                 hdrs = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
@@ -184,7 +185,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     data = zlib.decompress(data)
                 data = data.replace(UP_URL, LOCAL_URL)
                 # 单机保留地：录下私服原样回应（地址已换成本机，还没做人机改写），离线模式照着回
-                archive.record(self.command, self.path, body, status, rheaders, data, log)
+                archive.record(self.command, self.path, body, status, rheaders, data, log,
+                               auth=bool(self.headers.get('Authorization')))
             # 登录响应：记下玩家套牌；按 OPTION_OVERRIDES 改写服务器开关（只影响本机客户端）
             if self.command == 'POST' and self.path.split('?')[0] == '/session' and status == 200:
                 try:

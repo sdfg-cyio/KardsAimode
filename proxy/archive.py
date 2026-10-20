@@ -10,7 +10,11 @@ import os, json, re, time, threading
 DIR = os.environ.get('KARDS_ARCHIVE_DIR') or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'archive')
 SAMPLES = {'GET /matches/v2/': 5, 'POST /singleplayerlobby': 3, 'GET /matches/v2/reconnect': 3,
            'POST /players/{id}/decks': 3, 'PUT /players/{id}/decks/{id}': 3}
-THROTTLE = 60            # 同一个接口 60 秒内只写一次（心跳、通知轮询太频繁）
+THROTTLE = 60            # 频繁轮询的接口 60 秒内只写一次
+# 只有这些接口限频（2026-10-20 教训：原来所有接口都限频，登录前后两次 GET / 间隔 1 秒，
+# 登录后那份（带 current_user）被限掉了没录到，离线时客户端拿到未登录的那份就卡住进不去）
+NOISY = re.compile(r'^(PUT /players/\{id\}/heartbeat|GET /players/notifications/\{id\}|PUT /players/\{id\}|'
+                   r'GET /store/v2/txn|GET /matches/v2/reconnect)$')
 SKIP = re.compile(r'^/matches/v2/\d+/')   # PvP 对局里的动作/调度：量大、带对手数据，离线用不上
 SECRET_KEYS = ('password',)               # 登录请求里的密码不存
 
@@ -20,10 +24,11 @@ _seen = None             # 已录过的接口（第一次录到时打一行日�
 _cnt = {}                # 接口 -> 本次运行录了几份样本
 
 
-def key_of(method, path):
+def key_of(method, path, auth=False):
     p = path.split('?')[0]
     p = re.sub(r'/\d+(?=/|$)', '/{id}', p)
-    return f'{method} {p}'
+    # GET / 登录前后回应不同（登录后带 current_user 和 my_* 地址）：分开存
+    return f'{method} {p}' + (' (auth)' if auth and p == '/' else '')
 
 
 def _fname(key, n=None):
@@ -51,20 +56,20 @@ def _scrub(obj):
     return obj
 
 
-def record(method, path, req_body, status, headers, body, log=None):
-    """记一次私服往返。出任何错都吞掉：录档不能影响正常游戏"""
+def record(method, path, req_body, status, headers, body, log=None, auth=False):
+    """记一次私服往返（auth = 请求带了登录凭证）。出任何错都吞掉：录档不能影响正常游戏"""
     global _seen
     try:
         if SKIP.match(path.split('?')[0]):
             return
-        key = key_of(method, path)
+        key = key_of(method, path, auth)
         now = time.time()
         with _lock:
             if _seen is None:
                 os.makedirs(DIR, exist_ok=True)
                 _seen = {f for f in os.listdir(DIR)}
             n_keep = SAMPLES.get(key)
-            if not n_keep and now - _last.get(key, 0) < THROTTLE:
+            if NOISY.match(key) and now - _last.get(key, 0) < THROTTLE:
                 return
             _last[key] = now
             rec = {'key': key, 'method': method, 'path': path, 'time': time.strftime('%Y-%m-%d %H:%M:%S'),
