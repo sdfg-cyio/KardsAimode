@@ -5,6 +5,7 @@ import http.server, http.client, sys, os, datetime, gzip, zlib, json, re, traceb
 from local_match import LocalMatch, enc
 from kards_codec import decode
 import ai_decks
+import archive
 
 MATCH_RE = re.compile(r'^/matches/v2/(\d+)(/.*)?$')
 LOCAL = {}  # match_id -> LocalMatch
@@ -147,6 +148,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             elif 'deflate' in enc:
                 data = zlib.decompress(data)
             data = data.replace(UP_URL, LOCAL_URL)
+            # 单机保留地：录下私服原样回应（地址已换成本机，还没做人机改写），离线模式照着回
+            archive.record(self.command, self.path, body, r.status,
+                           [(k, v) for k, v in r.getheaders() if k.lower() not in HOP], data, log)
             # 登录响应：记下玩家套牌；按 OPTION_OVERRIDES 改写服务器开关（只影响本机客户端）
             if self.command == 'POST' and self.path.split('?')[0] == '/session' and r.status == 200:
                 try:
@@ -263,4 +267,5 @@ if __name__ == '__main__':
     srv = http.server.ThreadingHTTPServer(('127.0.0.1', LISTEN_PORT), Handler)
     log('kards proxy listening', LISTEN_PORT, '->', UP_HOST, UP_PORT,
         '' if UP_ADDR == UP_HOST else f'（域名解析不了，直连 {UP_ADDR}）')
+    log(f'[archive] 私服回应录档目录 {archive.DIR}，已录 {archive.summary()} 个接口')
     srv.serve_forever()

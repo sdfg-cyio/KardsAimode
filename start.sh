@@ -10,8 +10,11 @@ export PYTHONIOENCODING=utf-8
 LOGS=/sdcard/Download/kardsai_logs
 if mkdir -p "$LOGS" 2>/dev/null && touch "$LOGS/.w" 2>/dev/null; then
     export KARDS_LOG_DIR="$LOGS"
+    # 单机保留地：私服回应录档放 Download（重新安装会清空 ~/kardsai，录档不能放那里）
+    export KARDS_ARCHIVE_DIR=/sdcard/Download/kardsai_archive
 else
     LOGS="$HOME/kardsai/proxy"
+    export KARDS_ARCHIVE_DIR="$HOME/kardsai_archive"
     echo "（没有存储权限，日志写在 $LOGS；运行 termux-setup-storage 授权后可放到 Download）"
 fi
 termux-wake-lock 2>/dev/null || true   # 防止息屏后被系统挂起

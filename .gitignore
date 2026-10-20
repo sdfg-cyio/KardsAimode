@@ -21,3 +21,5 @@ kardsai_logs/
 .idea/
 .DS_Store
 Thumbs.db
+kardsai_archive/
+proxy/archive/
