@@ -51,6 +51,20 @@ kards usa_ramp        # 固定某一套
 | britain_meteor | 英澳流星 | 阿尔托莉雅·潘德拉贡 | 突尼斯城 |
 | britain_firewall | 英美防火墙 | 大吉岭 | 伦敦 |
 
+## 单机模式（私服关了也能打人机）
+
+代理会自动把私服的回应录到 `/sdcard/Download/kardsai_archive/`（密码不存）。
+**趁私服还在，先联网正常玩一轮**：登录、看看收藏/商店、改一次卡组、打一局训练。之后：
+
+```bash
+kards offline              # 完全不连私服；也可以 kards offline usa_ramp 指定对手
+```
+
+- 私服连不上时，`kards` 会自动进入离线模式（启动时会显示“离线模式”）。
+- 离线时：登录、收藏、卡组、训练局全在本机；卡组的增删改存在录档目录的 `offline_state.json`，不会同步回私服。
+- 离线时 PvP 不可用。
+- 建议把 `kardsai_archive` 整个备份到电脑。
+
 ## 更新
 
 ```bash

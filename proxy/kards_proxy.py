@@ -6,6 +6,7 @@ from local_match import LocalMatch, enc
 from kards_codec import decode
 import ai_decks
 import archive
+import offline
 
 MATCH_RE = re.compile(r'^/matches/v2/(\d+)(/.*)?$')
 LOCAL = {}  # match_id -> LocalMatch
@@ -58,6 +59,24 @@ def _pick_up_proxy():
 
 
 UP_PROXY = _pick_up_proxy()
+
+
+def _pick_offline():
+    """单机保留地：KARDS_OFFLINE=1 强制离线（完全不连私服）/ 0 强制联网 / auto（默认）私服连不上且有录档时离线"""
+    import os, socket
+    env = os.environ.get('KARDS_OFFLINE', 'auto').lower()
+    if env in ('1', 'on', 'yes', 'offline'):
+        return True
+    if env in ('0', 'off', 'no', 'online') or not offline.available() or UP_PROXY:
+        return False
+    try:
+        socket.create_connection((UP_ADDR, UP_PORT), timeout=5).close()
+        return False
+    except OSError:
+        return True
+
+
+OFFLINE = _pick_offline()
 LISTEN_PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 15233
 UP_URL = b'http://ovo.wards.mom:5233'
 LOCAL_URL = b'http://127.0.0.1:5233'
@@ -118,7 +137,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except Exception:
                 log('ERR local', self.command, self.path, traceback.format_exc())
                 st, data = 500, b'{}'
-            if was != 'finished' and lm.match_status == 'finished' and self.command == 'PUT' and body:
+            if was != 'finished' and lm.match_status == 'finished' and self.command == 'PUT' and body and not OFFLINE:
                 # 客户端发的结束请求（投降/拆总部）也给私服一份；要带上客户端的登录头，否则私服回“用户不存在”
                 _tell_upstream_end(self.path, body, {k: v for k, v in self.headers.items() if k.lower() not in HOP})
             if (m.group(2) or '') not in ('/actions', ''):  # 轮询太频繁，不记录
@@ -127,32 +146,47 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # 发往私服的 PvP 动作：去掉 sub_actions，保证联机流量与未改开关时一致
         if m and self.command == 'POST' and m.group(2) == '/actions' and body and OPTION_OVERRIDES:
             body = strip_subactions(body)
-        hdrs = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
-        hdrs['Host'] = f'{UP_HOST}:{UP_PORT}'
-        hdrs['Accept-Encoding'] = 'identity'  # 便于改写响应
-        # 电脑直连私服不通时，经本机的 HTTP 代理（如 Clash 127.0.0.1:7897）转发；UP_PROXY 为空则直连
-        if UP_PROXY:
-            ph, pp = UP_PROXY
-            conn = http.client.HTTPConnection(ph, pp, timeout=30)
-            target = f'http://{UP_ADDR}:{UP_PORT}{self.path}'
-        else:
-            conn = http.client.HTTPConnection(UP_ADDR, UP_PORT, timeout=30)
-            target = self.path
+        p0 = self.path.split('?')[0]
+        if OFFLINE and self.command == 'GET' and p0 == '/matches/v2/reconnect':
+            # 离线断线重连：本地还在进行的人机局给本地局面，否则“没有可重连的对局”
+            run = [lm for lm in LOCAL.values() if lm.match_status != 'finished']
+            data = json.dumps(run[-1].reconnect_payload(), ensure_ascii=False).encode() if run else b'null'
+            if run:
+                log(f'[local {run[-1].id}] 客户端断线重连，返回本地局面（离线）')
+            return self._reply(200, data)
+        conn = None
         try:
-            conn.request(self.command, target, body=body, headers=hdrs)
-            r = conn.getresponse()
-            data = r.read()
-            enc = (r.getheader('Content-Encoding') or '').lower()
-            if 'gzip' in enc:
-                data = gzip.decompress(data)
-            elif 'deflate' in enc:
-                data = zlib.decompress(data)
-            data = data.replace(UP_URL, LOCAL_URL)
-            # 单机保留地：录下私服原样回应（地址已换成本机，还没做人机改写），离线模式照着回
-            archive.record(self.command, self.path, body, r.status,
-                           [(k, v) for k, v in r.getheaders() if k.lower() not in HOP], data, log)
+            if OFFLINE:
+                # 单机保留地：不连私服，由 offline 模块按录档和本地状态回应
+                status, rheaders, data = offline.handle(self.command, self.path, body, log)
+                reason = ''
+            else:
+                hdrs = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
+                hdrs['Host'] = f'{UP_HOST}:{UP_PORT}'
+                hdrs['Accept-Encoding'] = 'identity'  # 便于改写响应
+                # 电脑直连私服不通时，经本机的 HTTP 代理（如 Clash 127.0.0.1:7897）转发；UP_PROXY 为空则直连
+                if UP_PROXY:
+                    ph, pp = UP_PROXY
+                    conn = http.client.HTTPConnection(ph, pp, timeout=30)
+                    target = f'http://{UP_ADDR}:{UP_PORT}{self.path}'
+                else:
+                    conn = http.client.HTTPConnection(UP_ADDR, UP_PORT, timeout=30)
+                    target = self.path
+                conn.request(self.command, target, body=body, headers=hdrs)
+                r = conn.getresponse()
+                status, reason = r.status, r.reason
+                rheaders = [(k, v) for k, v in r.getheaders() if k.lower() not in HOP]
+                data = r.read()
+                enc = (r.getheader('Content-Encoding') or '').lower()
+                if 'gzip' in enc:
+                    data = gzip.decompress(data)
+                elif 'deflate' in enc:
+                    data = zlib.decompress(data)
+                data = data.replace(UP_URL, LOCAL_URL)
+                # 单机保留地：录下私服原样回应（地址已换成本机，还没做人机改写），离线模式照着回
+                archive.record(self.command, self.path, body, status, rheaders, data, log)
             # 登录响应：记下玩家套牌；按 OPTION_OVERRIDES 改写服务器开关（只影响本机客户端）
-            if self.command == 'POST' and self.path.split('?')[0] == '/session' and r.status == 200:
+            if self.command == 'POST' and self.path.split('?')[0] == '/session' and status == 200:
                 try:
                     s = json.loads(data)
                     ai_decks.remember(s.get('player_id'), s['decks']['headers'])
@@ -172,8 +206,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 except Exception:
                     pass
             # 私服建好的人机局：登记为本地接管，并替换 AI 套牌
-            p0 = self.path.split('?')[0]
-            if self.command == 'GET' and p0 in ('/matches/v2/', '/matches/v2/reconnect') and r.status == 200:
+            if self.command == 'GET' and p0 in ('/matches/v2/', '/matches/v2/reconnect') and status == 200:
                 try:
                     j = json.loads(data)
                     if p0.endswith('reconnect') and isinstance(j, dict) and 'match_and_starting_data' not in j:
@@ -198,19 +231,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                             data = json.dumps(LOCAL[mid].raw, ensure_ascii=False).encode()
                 except Exception:
                     log('ERR parse match', traceback.format_exc())
-            self.send_response(r.status, r.reason)
-            for k, v in r.getheaders():
-                if k.lower() not in HOP:
-                    self.send_header(k, v)
+            self.send_response(status, reason or None)
+            for k, v in rheaders:
+                self.send_header(k, v)
             self.send_header('Content-Length', str(len(data)))
             self.end_headers()
             self.wfile.write(data)
-            log(self.command, self.path, r.status, len(data))
+            log('OFFLINE' if OFFLINE else '', self.command, self.path, status, len(data))
         except Exception as e:
-            log('ERR', self.command, self.path, e)
-            self.send_error(502)
+            log('ERR', self.command, self.path, e if not OFFLINE else traceback.format_exc())
+            try:
+                self.send_error(502)
+            except OSError:
+                pass                                 # 客户端已经断开
         finally:
-            conn.close()
+            if conn is not None:
+                conn.close()
 
     do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = _forward
 
@@ -268,4 +304,10 @@ if __name__ == '__main__':
     log('kards proxy listening', LISTEN_PORT, '->', UP_HOST, UP_PORT,
         '' if UP_ADDR == UP_HOST else f'（域名解析不了，直连 {UP_ADDR}）')
     log(f'[archive] 私服回应录档目录 {archive.DIR}，已录 {archive.summary()} 个接口')
+    if OFFLINE:
+        log('[offline] ===== 离线模式：不连私服，登录/收藏/卡组/训练局全部本机回应（PvP 不可用）=====')
+        if not offline.available():
+            log('[offline] 警告：录档不全（缺登录或开局样本），游戏可能进不去。联网时正常玩一轮补录')
+    else:
+        log('[offline] 联网模式（私服连不上时会自动离线；强制离线：kards offline）')
     srv.serve_forever()

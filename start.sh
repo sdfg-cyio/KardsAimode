@@ -3,6 +3,12 @@
 #   游戏 -> 127.0.0.1:5233（本代理）-> 私服；AI 经 127.0.0.1:23456 直连游戏里的探针
 # 用法：kards            随机对手（所有已登记卡组轮换，连续 3 局不重复）
 #       kards japan_legion   固定某一套
+#       kards offline [卡组]  离线模式：完全不连私服（要先联网玩过一轮录档）；kards online 强制联网
+#       （默认自动：私服连不上且有录档时自动离线）
+case "$1" in
+    offline) export KARDS_OFFLINE=1; shift ;;
+    online)  export KARDS_OFFLINE=0; shift ;;
+esac
 cd "$HOME/kardsai/proxy"
 export KARDS_AI_DECK="${1:-${KARDS_AI_DECK:-mix}}"
 export PYTHONIOENCODING=utf-8
