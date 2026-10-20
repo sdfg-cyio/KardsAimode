@@ -170,11 +170,16 @@ def _decks(method, pid, did, req):
     if method == 'GET':
         d = next((x for x in decks if x.get('id') == did), None)
         return _json(200, d) if d else _not_found(method, f'/players/{pid}/decks/{did}')
+    # 格式按 2026-10-20 录到的真实回应：新建回 201 + 完整卡组（没给卡背时用阵营新手卡背）；
+    # 修改是 {"action": "fill", "deck_code": ...}，删除和修改都回 200 空内容
+    empty = (200, [], b'')
     if method == 'POST':
         d = dict(req or {})
-        d.update(id=max([x.get('id', 0) for x in decks] + [100000]) + random.randint(1, 999),
-                 player_id=pid, create_date=_now_iso(), modify_date=_now_iso(), last_played=_now_iso())
-        d.setdefault('favorite', False)
+        now = _now_iso()
+        d.setdefault('card_back', f'cardback_starter_{str(d.get("main_faction", "")).lower()}')
+        d.setdefault('deck_code', '')
+        d.update(favorite=False, id=max([x.get('id', 0) for x in decks] + [100000]) + random.randint(1, 999),
+                 player_id=pid, last_played=now, create_date=now, modify_date=now)
         decks.append(d)
         _save()
         return _json(201, d)
@@ -182,16 +187,16 @@ def _decks(method, pid, did, req):
         d = next((x for x in decks if x.get('id') == did), None)
         if d is None:
             return _not_found(method, f'/players/{pid}/decks/{did}')
-        d.update({k: v for k, v in (req or {}).items() if k not in ('id', 'player_id')})
+        d.update({k: v for k, v in (req or {}).items() if k not in ('id', 'player_id', 'action')})
         d['modify_date'] = _now_iso()
         _save()
-        return _json(200, d)
+        return empty
     if method == 'PUT':
-        return _json(200, decks)                 # PUT /players/{id}/decks（整体保存，实测 200）
+        return empty                             # PUT /players/{id}/decks（整体保存）
     if method == 'DELETE' and did is not None:
         st['decks'] = [x for x in decks if x.get('id') != did]
         _save()
-        return _json(200, {})
+        return empty
     return _not_found(method, f'/players/{pid}/decks')
 
 
