@@ -25,7 +25,8 @@ GENERIC = Generic()
 PLANS = {'usa_ramp': 'deck_usa_ramp', 'soviet_control': 'deck_soviet_control', 'germany_ramp': 'deck_germany_ramp',
          'britain_meteor': 'deck_britain_meteor', 'japan_legion': 'deck_japan_legion',
          'britain_firewall': 'deck_britain_firewall', 'germany_panzer': 'deck_germany_panzer',
-         'usa_assault': 'deck_usa_assault', 'japan_burst': 'deck_japan_burst'}
+         'usa_assault': 'deck_usa_assault', 'japan_burst': 'deck_japan_burst',
+         'soviet_convert': 'deck_soviet_convert'}
 ACTIVE = GENERIC
 
 

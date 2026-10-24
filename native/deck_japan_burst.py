@@ -210,3 +210,9 @@ KEEP = {E_ + 'honorable_death', U_ + 'kurume_regiment', E_ + 'seize_the_initiati
 def keep(name, cost):
     """起手调度：留低费解场、久留米、先发制人、最后的仪式和南进计划；大清场换掉"""
     return name in KEEP
+
+
+# 难度加成（native/buffs.py）：OPENING = 老兵及以上的起手候选池（随机挑 4~5 张）；CORE = 地狱档手牌少时打印的核心牌
+OPENING = [E_ + 'honorable_death', U_ + 'kurume_regiment', E_ + 'seize_the_initiative', E_ + 'last_rites',
+           E_ + 'southern_plan', E_ + 'liberation', E_ + 'imperial_research', E_ + 'defend_in_depth']
+CORE = [E_ + 'compromise', E_ + 'phoney_war', E_ + 'banzai_charge', E_ + 'to_the_last_man', E_ + 'saar_probe']

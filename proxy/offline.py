@@ -9,6 +9,8 @@ import archive
 import ai_decks
 
 STATE = os.path.join(archive.DIR, 'offline_state.json')
+# 客户端连的本机地址（1.58 是 5233，COMET 是 5235），由 kards_proxy 按上游设置
+LOCAL = os.environ.get('KARDS_LOCAL_URL', 'http://127.0.0.1:5233')
 _lock = threading.RLock()
 _state = None
 _pending = {}            # player_id -> 进入训练时选的 deck_id（POST /singleplayerlobby 之后、开局之前）
@@ -142,7 +144,7 @@ def _root_auth():
         'provider': q.get('provider', 'device_id'), 'roles': [], 'tier': 'LIVE', 'user_id': s.get('user_id', pid),
         'user_name': q.get('username', '')}
     ep = root.get('endpoints') or {}
-    base = ep.get('root', 'http://127.0.0.1:5233')
+    base = ep.get('root', LOCAL)
     ep.update(my_draft=f'{base}/draft/{pid}', my_items=f'{base}/items/{pid}', my_player=f'{base}/players/{pid}')
     return _json(200, root)
 
@@ -217,16 +219,38 @@ def _items(method, req):
     return _json(200, base)
 
 
+def _usable(d):
+    try:
+        return bool(ai_decks.parse_deck_code(d.get('deck_code') or '')[0])
+    except KeyError:
+        return False                             # 卡组码里有不认识的卡
+
+
+def _template():
+    """开局样本：优先本录档目录里录到的，没有就用随包带的脱敏样本（COMET 服训练模式被关，录不到）"""
+    r = _rec('GET /matches/v2/')
+    if r is not None:
+        return copy.deepcopy(r['body'])
+    with open(os.path.join(ai_decks.W, 'match_template.json'), encoding='utf-8') as f:
+        return json.load(f)
+
+
 def _new_match(deck_id, log):
-    """照录档里的开局样本，用玩家所选卡组生成一局训练（AI 那一半随后由 ai_decks.replace_ai_deck 换掉）"""
-    tpl = copy.deepcopy(_rec('GET /matches/v2/')['body'])
+    """离线：照录档里的开局样本，用本地保存的卡组生成一局训练"""
+    s = (_rec('POST /session') or {}).get('body') or {}
+    return build_match(_load()['decks'], deck_id, s, log)
+
+
+def build_match(decks, deck_id, s, log):
+    """用玩家所选卡组生成一局训练（AI 那一半随后由 ai_decks.replace_ai_deck 换掉）。
+    decks = 玩家卡组列表，s = 登录回应（取玩家 id、名字）"""
+    tpl = _template()
     md = tpl['match_and_starting_data']
     m, sd = md['match'], md['starting_data']
-    s = (_rec('POST /session') or {}).get('body') or {}
-    decks = [d for d in _load()['decks'] if ai_decks.parse_deck_code(d['deck_code'])[0]]
+    decks = [d for d in decks if _usable(d)]
     deck = next((d for d in decks if d.get('id') == deck_id), None) or (decks[0] if decks else None)
     if deck is None:
-        raise RuntimeError('本地没有可用的卡组')
+        raise RuntimeError('没有可用的卡组')
     cards, loc = ai_decks.parse_deck_code(deck['deck_code'])
     me = 'left' if sd['player_id_left'] < 900000000 else 'right'
     ai = 'right' if me == 'left' else 'left'
@@ -251,10 +275,15 @@ def _new_match(deck_id, log):
         sd[f'card_back_{side}'] = deck.get('card_back') or sd[f'card_back_{side}']
     sd[f'{me}_player_name'] = s.get('player_name') or sd[f'{me}_player_name']
     sd[f'{me}_player_tag'] = s.get('player_tag') or sd[f'{me}_player_tag']
+    pid = s.get('player_id')
+    if pid:                                      # 样本可能来自别的账号/服务器：玩家 id 换成当前登录的
+        sd[f'player_id_{me}'] = m[f'player_id_{me}'] = pid
+        if m.get('action_side') == me:
+            m['action_player_id'] = pid
     m.update(match_id=mid, current_action_id=0, current_turn=1, actions=[], notifications=[], status='pending',
              winner_id=0, winner_side='', modify_date=json.dumps(_now_iso()),
-             match_url=f'http://127.0.0.1:5233/matches/v2/{mid}',
-             actions_url=f'http://127.0.0.1:5233/matches/v2/{mid}/actions')
+             match_url=f'{LOCAL}/matches/v2/{mid}',
+             actions_url=f'{LOCAL}/matches/v2/{mid}/actions')
     m[f'deck_id_{me}'] = deck.get('id')
     m[f'deck_id_{ai}'] = 0
     m[f'player_status_{me}'], m[f'player_status_{ai}'] = 'not_done', 'mulligan_done'

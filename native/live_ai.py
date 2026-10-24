@@ -126,6 +126,8 @@ class TurnLog:
         my = st['side'][me] if st else None
         self.base_sup = len(my['support']) if my else 0
         self.base_front = len(my['front']) if my else 0
+        # 回合开始时我方场上单位 {编号: 卡名}：之后出现的新编号/卡名变了的 = 本回合转换或刷出的，当回合不能行动（闪击除外）
+        self.start_names = {u.id: u.name for u in my['support'] + my['front']} if my else None
         self.n_deploy, self.n_move = 0, 0
         self.played = 0            # 本回合下过的指令数（第 60 骑兵团：每回合只能下一个）
         self.no_deploy = False     # 对方上回合打了提尔皮茨/U-99：本回合不能部署（由驱动设置）
@@ -153,6 +155,10 @@ class TurnLog:
             self.deploys = getattr(sim, 'deploys', self.deploys)
             if getattr(sim, 'fatigue', None):
                 self.memo['fatigue'] = dict(sim.fatigue)     # 疲惫伤害次数（等差数列）
+            if getattr(sim, 'deck_n', None):
+                # 本回合抽掉的牌要从牌库张数里扣（驱动只在回合开始估算一次）。
+                # 132795：44 团先抽 2 张，下一步反击之剑还按回合开始的 5 张算，没看到疲惫，总部白掉 9 点
+                self.memo['deck_n'] = dict(sim.deck_n)
             for s, n in (getattr(sim, 'deck_add', None) or {}).items():
                 da = self.memo.setdefault('deck_added', {})
                 da[s] = da.get(s, 0) + n                      # 往牌库塞的牌：驱动下回合并入牌库张数
@@ -236,8 +242,10 @@ def gen_actions(st, me, log=None):
     for u in units:
         if not ready(u, st['turn']) or u.op is None or (u.op > kr and u.id not in free):
             continue
-        # 部署当回合不能行动（闪击除外，永先者团给的免费行动除外）；攻击过的不能再动；移动过的不能攻击
-        if u.id in log.deployed and not u.blitz and u.id not in free:
+        # 部署当回合不能行动（闪击除外，永先者团给的免费行动除外）；攻击过的不能再动；移动过的不能攻击。
+        # 本回合转换/刷出的单位（编号或卡名和回合开始时不同）同部署
+        fresh = u.id in log.deployed or (log.start_names is not None and log.start_names.get(u.id) != u.name)
+        if fresh and not u.blitz and u.id not in free:
             continue
         # 奋战（fury）一回合可攻击两次；坦克攻击后仍可移动（用户确认），其他单位攻击后不能再动
         n_att = log.attacks.get(u.id, 0)
@@ -256,7 +264,7 @@ def gen_actions(st, me, log=None):
         if att_left and (not moved or u.move_and_attack or u.type == 'tank') and not u.cant_attack \
                 and not card_rules.cant_attack(u.name) and not card_rules.attack_blocked(st, u):
             for t in attack_targets(st, me, u):
-                if worth_attacking(t) and (t is not None or card_rules.can_attack_hq(st, me, u, u.id in log.deployed)):
+                if worth_attacking(t) and (t is not None or card_rules.can_attack_hq(st, me, u, fresh)):
                     acts.append(('attack', u, t))
     return acts
 

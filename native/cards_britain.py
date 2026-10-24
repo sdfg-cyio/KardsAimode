@@ -191,6 +191,9 @@ def neutral_v(sim, side, u, atk_cut, hq_only=False):
     折算；本回合的威胁已在 planner.threat 里体现，这里只算之后的回合"""
     plan = _plan(sim)
     rounds = getattr(plan, 'NEUTRAL_R', 3.0)
+    fn = getattr(plan, 'neutral_rounds', None)
+    if fn is not None:
+        rounds = fn(sim, u, rounds)           # 卡组按“这个单位已经打过几次总部”等修正还能打几回合
     # 这套几乎没有单位：敌方单位的攻击基本都打在总部上
     v = 0.6 * max(0, atk_cut) * rounds
     if u.type in ('artillery', 'bomber'):

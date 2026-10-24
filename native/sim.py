@@ -111,12 +111,22 @@ class Sim:
                if isinstance(c.id, int)]
         self.bonus, self.next_id, self.n_actions = 0.0, min(ids + [0]) - 1, 0
         self.rng, self.random_used, self.ctx = random.Random(0), False, {}
-        self.last_dead = {'left': None, 'right': None}   # 每方上一个被消灭的陆军（伊尔-10 亡计）
         self.temp = dict(getattr(tlog, 'temp', {}) or {})  # 单位 id -> 本回合内有效的攻击加成（回合结束失效）
         self.temp_op = dict(getattr(tlog, 'temp_op', {}) or {})  # 单位 id -> 本回合内的行动费变化（闪电战）
         self.once = set(getattr(tlog, 'once', ()) or ())   # 本回合已触发过的“每回合一次”效果
         # 跨回合的对局记忆（驱动维护，模拟里只读）：军司令部标记、上回合是否部署过英国步兵
         self.memo = getattr(tlog, 'memo', None) or {}
+        # 每方上一个被消灭的陆军（伊尔-10 亡计）/ 任何单位（KV-85）：跨回合的由驱动记在 memo（只有卡名）
+        self.last_dead = {s: SC.new(n, s, 0, 'dead') if n else None
+                          for s, n in ((s, (self.memo.get('last_dead_ground') or {}).get(s)) for s in ('left', 'right'))}
+        self.last_dead_any = {s: SC.new(n, s, 0, 'dead') for s, n in (self.memo.get('last_dead_any') or {}).items() if n}
+        # 本回合中途出现的单位（转换出来的、效果刷出来的：编号不在回合开始的快照里，或卡名变了）：
+        # 当回合不能行动（闪击除外，用户确认）
+        start = getattr(tlog, 'start_names', None)
+        if start is not None:
+            for u in self.side[me]['support'] + self.side[me]['front']:
+                if start.get(u.id) != u.name:
+                    self.deployed.add(u.id)
         # 单位 id -> 本局累计行动次数（豹式防磁装甲型）：memo['op_count'] 由 TurnLog.carry 每步写回
         self.op_count = dict(self.memo.get('op_count', {}))
         # 下回合结束会被弃掉的手牌 id（长久围困抽的牌）：留着没价值。驱动记在 memo['expiring']
@@ -175,6 +185,7 @@ class Sim:
                       'max_kredits': d['max_kredits'], 'hq': d['hq'].copy()} for k, d in self.side.items()}
         n.deployed, n.moved, n.attacks = set(self.deployed), set(self.moved), dict(self.attacks)
         n.last_dead = dict(self.last_dead)
+        n.last_dead_any = dict(self.last_dead_any)
         n.temp, n.once = dict(self.temp), set(self.once)
         n.temp_op, n.op_count = dict(self.temp_op), dict(self.op_count)
         n.en_cm = set(self.en_cm)

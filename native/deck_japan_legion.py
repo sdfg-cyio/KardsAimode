@@ -94,7 +94,8 @@ def _weather_values(sim, side):
     room = max(0, 4 - len(my['support']))
     small = sum(1 for u in foes if 0 < (u.df or 0) <= 2)
     top2 = lambda us: sum(sorted(((u.cost or 0) for u in us), reverse=True)[:2])
-    kr = 0.4                                            # 每点费用的机会成本
+    nxt = min(12, (my.get('max_kredits') or 0) + 1)    # 下回合的指挥点上限
+    kr = 0.4 if nxt < 7 else 0.25                       # 每点费用的机会成本：后期费用宽裕，别总挑 2 费
     hit = min(1.0, 0.25 * len(foes))                    # 单位加防只在会被打时有用（对面空场时几乎不值）
     inf = [u for u in mine if u.type == 'infantry']
     foe_v = sum(0.5 * ((u.atk or 0) + (u.df or 0)) for u in foes)
@@ -109,7 +110,7 @@ def _weather_values(sim, side):
          max([0.5 * ((u.atk or 0) + (u.df or 0)) for u in mine] or [0]),       # 复制 1 个友方单位
          0.6 * 2 * min(2, len(hand_units)) + 1.0 * min(2, len(hand_units))],   # 新上场 +2 攻和闪击
         [sum(0.5 * ((h.atk or 0) + (h.df or 0)) for h in hand_units[:room]) * 0.6,   # 手里单位全部上场
-         2.5 * len(mine),                                                      # 友方全体 +3+2
+         3.0 * (len(mine) + min(1, len(hand_units))),                          # 友方全体 +3+2（永久，晴天最重要的一张）
          0.6 * sum((u.atk or 0) for u in mine if u.type in ('fighter', 'bomber'))]]   # 空军打谁都打总部
     rain = [
         [6 * 0.5 * low + 0.3 * min(len(mine), 3),                              # 6 点防御随机分配
@@ -132,8 +133,29 @@ def _weather_values(sim, side):
         [3 * 1.5 - 0.8 * (len(my['hand']) + 3) * low,                          # 抽 3，总部扣手牌数
          1.5 * len(en['front']) - 1.5 * len(my['front']),                      # 所有单位撤退（双方）
          (big_foe + 1.0) if foes else 0]]                                      # 6 点 + 相邻 2 点
-    cost = (2 * kr, 4 * kr, 6 * kr)
-    return [[[x - cost[k] for x in pool[k]] for k in range(3)] for pool in (sunny, rain, storm)]
+    # 下回合打不起的档位直接排除（4/6 费天气早期拿到只会烂在手里）
+    cost = [c * kr if c <= nxt else 99.0 for c in (2, 4, 6)]
+    # 局势倾向（用户：顺境晴天、逆境风暴、绝境降雨）：给对应天气每张变体加分
+    bias = [0.0, 0.0, 0.0]
+    bias[WEATHER_BIAS[_situation(sim, side)][0]] += WEATHER_BIAS[_situation(sim, side)][1]
+    return [[[x - cost[k] + bias[w] for x in pool[k]] for k in range(3)]
+            for w, pool in enumerate((sunny, rain, storm))]
+
+
+# 局势 -> (偏向的天气, 加分)：0 晴 / 1 雨 / 2 风暴；均势也略偏风暴（实战晴天开得太多，用户 2026-10-24）
+WEATHER_BIAS = {'ahead': (0, 1.5), 'even': (2, 0.8), 'behind': (2, 2.0), 'desperate': (1, 2.5)}
+
+
+def _situation(sim, side):
+    """顺境 / 均势 / 逆境 / 绝境：绝境 = 总部 <= 7 或下回合可能被斩杀；其余按场面差 + 总部差"""
+    my, en = sim.side[side], sim.side[_e(side)]
+    H, E = my['hq'].df, en['hq'].df
+    T = (sim.ctx or {}).get('T', 0)
+    if H <= 7 or T >= H - 2:
+        return 'desperate'
+    bv = lambda us: sum(0.5 * ((u.atk or 0) + (u.df or 0)) for u in us)
+    lead = bv(sim.units(side)) - bv(sim.units(_e(side))) + 0.3 * (H - E)
+    return 'ahead' if lead >= 2 else 'behind' if lead <= -2 else 'even'
 
 
 def forecast_choice(sim, side):
@@ -385,3 +407,9 @@ KEEP = {U_ + '1st_recon', U_ + 'type94_tk', U_ + '238th_regiment', STRETCH, U_ +
 def keep(name, cost):
     """起手调度：留低费守线、延长战线、塔尔努夫（第 4 回合起引擎），大单位/回血牌换掉"""
     return name in KEEP
+
+
+# 难度加成（native/buffs.py）：OPENING = 老兵及以上的起手候选池（随机挑 4~5 张）；CORE = 地狱档手牌少时打印的核心牌
+OPENING = [U_ + '1st_recon', U_ + 'type94_tk', U_ + '238th_regiment', STRETCH, U_ + 'dinah_iii', TARNOW,
+           U_ + '2nd_raiding_brigade', U_ + 'danuta']
+CORE = [TARNOW, U_ + 'thunder_division', U_ + '2nd_raiding_brigade', STRETCH, U_ + 'kyoto_regiment']

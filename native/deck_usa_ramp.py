@@ -163,3 +163,9 @@ KEEP = {E_ + 'the_war_machine', E_ + 'us_military_research', U_ + 'middlesex_reg
 def keep(name, cost):
     """起手调度：留低费加费/守线牌，大单位和解场换掉"""
     return name in KEEP or (cost or 0) <= 2
+
+
+# 难度加成（native/buffs.py）：OPENING = 老兵及以上的起手候选池（随机挑 4~5 张）；CORE = 地狱档手牌少时打印的核心牌
+OPENING = [E_ + 'the_war_machine', E_ + 'us_military_research', U_ + 'middlesex_regiment', E_ + 'supply_shipment',
+           U_ + 'm3a3_honey_desert', E_ + 'for_freedom', U_ + 'seahawk', U_ + 'us_signal_corps']
+CORE = [U_ + 'lancaster', U_ + 'm26_pershing', U_ + 'b_29_super_fortress', E_ + 'war_bonds', U_ + 'tigercat']

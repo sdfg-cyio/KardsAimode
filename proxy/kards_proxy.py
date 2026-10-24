@@ -14,11 +14,23 @@ LOCAL = {}  # match_id -> LocalMatch
 # AI 据此校正场面。注意 PvP 时这会让对方客户端收到带 sub_actions 的动作，所以 PvP 前可关掉此项
 OPTION_OVERRIDES = {'skip_sending_subactions': 0}
 
-UP_HOST, UP_PORT = 'ovo.wards.mom', 5233
+# 上游私服：KARDS_UPSTREAM=wards（默认，1.58 私服，明文 5233）/ comet（COMET 4.x 客户端，https 443）
+# 两个客户端各连本机不同端口（1.58 改成 5233，COMET 改成 5235），各起一个代理实例，录档目录也分开
+UPSTREAMS = {
+    'wards': dict(host='ovo.wards.mom', port=5233, tls=False, ip='43.199.188.3',
+                  urls=[b'http://ovo.wards.mom:5233']),
+    # COMET 根接口返回的 endpoints 写的是 http://comet.gonm2.cn，客户端内置的是 https://，两种都改写成本机
+    'comet': dict(host='comet.gonm2.cn', port=443, tls=True, ip=None,
+                  urls=[b'https://comet.gonm2.cn', b'http://comet.gonm2.cn']),
+}
+UPSTREAM = os.environ.get('KARDS_UPSTREAM', 'wards').lower()
+_U = UPSTREAMS[UPSTREAM]
+UP_HOST, UP_PORT, UP_TLS = _U['host'], _U['port'], _U['tls']
+UP_HOST_HDR = UP_HOST if UP_PORT in (80, 443) else f'{UP_HOST}:{UP_PORT}'
 # 2026-10-19 私服域名的 DNS 记录被删了（各家 DNS 都返回不存在），但服务器本身还在：
 # 直接连 IP、请求头 Host 仍写域名就能用（服务器前面有 CDN，按 Host 分流，不带域名会返回人机验证页）。
 # 所以只把“连哪个地址”换成 IP，Host 头照旧。IP 来自抓包；环境变量 KARDS_UP_IP 可改
-UP_IP_FALLBACK = '43.199.188.3'
+UP_IP_FALLBACK = _U['ip']
 
 
 def _pick_up_addr():
@@ -31,7 +43,7 @@ def _pick_up_addr():
         socket.getaddrinfo(UP_HOST, UP_PORT)
         return UP_HOST
     except OSError:
-        return UP_IP_FALLBACK
+        return UP_IP_FALLBACK or UP_HOST
 
 
 UP_ADDR = _pick_up_addr()
@@ -78,8 +90,32 @@ def _pick_offline():
 
 OFFLINE = _pick_offline()
 LISTEN_PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 15233
-UP_URL = b'http://ovo.wards.mom:5233'
-LOCAL_URL = b'http://127.0.0.1:5233'
+UP_URLS = _U['urls']
+# 客户端里写死的本机地址（build 脚本改的），电脑上经 adb reverse 时监听端口不同，但客户端看到的仍是这个
+LOCAL_URL = b'http://127.0.0.1:5235' if UPSTREAM == 'comet' else b'http://127.0.0.1:5233'
+offline.LOCAL = LOCAL_URL.decode()
+# 本机自建训练局：COMET 服关了训练模式，默认开；KARDS_LOCAL_TRAINING=1/0 可强制
+LOCAL_TRAINING = os.environ.get('KARDS_LOCAL_TRAINING', '1' if UPSTREAM == 'comet' else '0') == '1'
+PENDING = {}         # player_id -> 进训练时选的 deck_id
+LOCAL_ONLY = set()   # 本机自建的局号（私服不知道）
+SESSION = {}         # 登录回应里的 player_id / player_name / player_tag
+
+
+def _up_conn(timeout):
+    """建到私服的连接，返回 (conn, 请求目标)。https 上游走 TLS（证书照常校验）；
+    经本机 HTTP 代理时：明文用完整 URL，https 用 CONNECT 隧道"""
+    import ssl
+    if UP_TLS:
+        ctx = ssl.create_default_context()
+        if UP_PROXY:
+            conn = http.client.HTTPSConnection(*UP_PROXY, timeout=timeout, context=ctx)
+            conn.set_tunnel(UP_HOST, UP_PORT)
+        else:
+            conn = http.client.HTTPSConnection(UP_ADDR, UP_PORT, timeout=timeout, context=ctx)
+        return conn, None
+    if UP_PROXY:
+        return http.client.HTTPConnection(*UP_PROXY, timeout=timeout), f'http://{UP_ADDR}:{UP_PORT}'
+    return http.client.HTTPConnection(UP_ADDR, UP_PORT, timeout=timeout), None
 HOP = {'connection', 'keep-alive', 'transfer-encoding', 'content-length', 'content-encoding', 'host'}
 
 def strip_subactions(body):
@@ -137,7 +173,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except Exception:
                 log('ERR local', self.command, self.path, traceback.format_exc())
                 st, data = 500, b'{}'
-            if was != 'finished' and lm.match_status == 'finished' and self.command == 'PUT' and body and not OFFLINE:
+            if was != 'finished' and lm.match_status == 'finished' and self.command == 'PUT' and body and not OFFLINE \
+                    and int(m.group(1)) not in LOCAL_ONLY:   # 本机自建的训练局私服不认识，不用通知
                 # 客户端发的结束请求（投降/拆总部）也给私服一份；要带上客户端的登录头，否则私服回“用户不存在”
                 _tell_upstream_end(self.path, body, {k: v for k, v in self.headers.items() if k.lower() not in HOP})
             if (m.group(2) or '') not in ('/actions', ''):  # 轮询太频繁，不记录
@@ -147,6 +184,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if m and self.command == 'POST' and m.group(2) == '/actions' and body and OPTION_OVERRIDES:
             body = strip_subactions(body)
         p0 = self.path.split('?')[0]
+        if LOCAL_TRAINING and not OFFLINE:
+            hdrs = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
+            r = _local_training(self.command, p0, body, hdrs)
+            if r is not None:
+                return self._reply(*r)
         if OFFLINE and self.command == 'GET' and p0 == '/matches/v2/reconnect':
             # 离线断线重连：本地还在进行的人机局给本地局面，否则“没有可重连的对局”
             run = [lm for lm in LOCAL.values() if lm.match_status != 'finished']
@@ -163,17 +205,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 reason = ''
             else:
                 hdrs = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
-                hdrs['Host'] = f'{UP_HOST}:{UP_PORT}'
+                hdrs['Host'] = UP_HOST_HDR
                 hdrs['Accept-Encoding'] = 'identity'  # 便于改写响应
                 # 电脑直连私服不通时，经本机的 HTTP 代理（如 Clash 127.0.0.1:7897）转发；UP_PROXY 为空则直连
-                if UP_PROXY:
-                    ph, pp = UP_PROXY
-                    conn = http.client.HTTPConnection(ph, pp, timeout=30)
-                    target = f'http://{UP_ADDR}:{UP_PORT}{self.path}'
-                else:
-                    conn = http.client.HTTPConnection(UP_ADDR, UP_PORT, timeout=30)
-                    target = self.path
-                conn.request(self.command, target, body=body, headers=hdrs)
+                conn, pre = _up_conn(30)
+                conn.request(self.command, (pre or '') + self.path, body=body, headers=hdrs)
                 r = conn.getresponse()
                 status, reason = r.status, r.reason
                 rheaders = [(k, v) for k, v in r.getheaders() if k.lower() not in HOP]
@@ -183,7 +219,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     data = gzip.decompress(data)
                 elif 'deflate' in enc:
                     data = zlib.decompress(data)
-                data = data.replace(UP_URL, LOCAL_URL)
+                for u in UP_URLS:
+                    data = data.replace(u, LOCAL_URL)
                 # 单机保留地：录下私服原样回应（地址已换成本机，还没做人机改写），离线模式照着回
                 archive.record(self.command, self.path, body, status, rheaders, data, log,
                                auth=bool(self.headers.get('Authorization')))
@@ -191,6 +228,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if self.command == 'POST' and self.path.split('?')[0] == '/session' and status == 200:
                 try:
                     s = json.loads(data)
+                    SESSION.clear()
+                    SESSION.update({k: s.get(k) for k in ('player_id', 'player_name', 'player_tag')})
                     ai_decks.remember(s.get('player_id'), s['decks']['headers'])
                     if OPTION_OVERRIDES and isinstance(s.get('server_options'), str):
                         so = json.loads(s['server_options'])
@@ -252,6 +291,65 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = _forward
 
+def _up_get(path, hdrs):
+    """带客户端登录头向私服 GET，返回 (状态码, 内容)"""
+    conn, pre = _up_conn(15)
+    try:
+        h = dict(hdrs)
+        h['Host'] = UP_HOST_HDR
+        h['Accept-Encoding'] = 'identity'
+        conn.request('GET', (pre or '') + path, headers=h)
+        r = conn.getresponse()
+        return r.status, r.read()
+    finally:
+        conn.close()
+
+
+def _local_training(method, p0, body, hdrs):
+    """本机自建训练局（COMET 服把训练模式关了：POST /singleplayerlobby 回 400“训练模式已关闭”）。
+    训练相关请求不发往私服，开局由 offline.build_match 按玩家所选卡组生成，之后照常由 LocalMatch 接管。
+    返回 (状态码, 内容, 类型) 表示已本地回应；None 表示照常转发（登录、收藏、PvP 都不受影响）"""
+    if method == 'POST' and p0 == '/singleplayerlobby':
+        try:
+            req = json.loads(body) if body else {}
+        except Exception:
+            req = {}
+        PENDING[req.get('player_id') or SESSION.get('player_id')] = req.get('deck_id')
+        ai_decks.last_lobby_deck = req.get('deck_id')
+        log('[local] 训练局请求由本机处理（不发往私服）', req.get('deck_id'))
+        return 201, b'OK', 'text/html'
+    if method == 'DELETE' and p0 == '/singleplayerlobby' and PENDING:
+        PENDING.clear()
+        return 200, b'OK', 'text/html'
+    if method == 'GET' and p0 == '/matches/v2/reconnect':
+        run = [lm for mid, lm in LOCAL.items() if mid in LOCAL_ONLY and lm.match_status != 'finished']
+        if run:
+            log(f'[local {run[-1].id}] 客户端断线重连，返回本地局面')
+            return 200, json.dumps(run[-1].reconnect_payload(), ensure_ascii=False).encode(), 'application/json'
+        return None
+    if method == 'GET' and p0 == '/matches/v2/' and PENDING:
+        pid, deck_id = PENDING.popitem()
+        decks = (ai_decks.DECKS.get(pid) or [])
+        try:
+            st, d = _up_get(f'/players/{pid}/decks', hdrs)      # 用最新卡组（登录后可能改过）
+            if st == 200 and isinstance(json.loads(d), list):
+                decks = json.loads(d)
+        except Exception as e:
+            log('[local] 取卡组失败，用登录时的卡组', e)
+        try:
+            j = offline.build_match(decks, deck_id, SESSION, log)
+            ai_decks.replace_ai_deck(j, log)
+            mid = j['match_and_starting_data']['match']['match_id']
+            LOCAL[mid] = LocalMatch(j, log)
+            LOCAL_ONLY.add(mid)
+            log(f'[local {mid}] 本机自建训练局')
+            return 200, json.dumps(LOCAL[mid].raw, ensure_ascii=False).encode(), 'application/json'
+        except Exception:
+            log('ERR 自建训练局', traceback.format_exc())
+            return 200, b'null', 'text/html'
+    return None
+
+
 def _reconnect_flat(j, data):
     """重连响应（实测外层是 match / starting_data / actions / mulligan_left/right…，不是开局的 match_and_starting_data）。
     私服不知道本地接管局里发生了什么：本地局已结束、或代理重启后不认识的旧人机局，私服仍当它“进行中”，
@@ -284,15 +382,10 @@ def _tell_upstream_end(path, body, hdrs=None):
 
     def go():
         try:
-            if UP_PROXY:
-                conn = http.client.HTTPConnection(*UP_PROXY, timeout=15)
-                target = f'http://{UP_ADDR}:{UP_PORT}{path}'
-            else:
-                conn = http.client.HTTPConnection(UP_ADDR, UP_PORT, timeout=15)
-                target = path
+            conn, pre = _up_conn(15)
             h = dict(hdrs or {'Content-Type': 'application/json'})
-            h['Host'] = f'{UP_HOST}:{UP_PORT}'
-            conn.request('PUT', target, body=body, headers=h)
+            h['Host'] = UP_HOST_HDR
+            conn.request('PUT', (pre or '') + path, body=body, headers=h)
             r = conn.getresponse()
             log(f'[local] 结束请求已转给私服 {path}：{r.status} {r.read()[:60]!r}')
             conn.close()

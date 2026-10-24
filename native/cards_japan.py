@@ -8,7 +8,7 @@ import sim_rules as R
 import effects
 from sim import SC, other
 from effects import (P, U, card, on, gain, buff, temp_atk, once, rand_damage, rand_kill, unit_or_hq, research,
-                     enemy_targets, all_units, spawn, forecast, on_intel)
+                     enemy_targets, all_units, spawn, forecast, on_intel, convert, converted)
 
 LEGION = U + 'legion_pol'
 
@@ -448,12 +448,10 @@ def _wolves(sim, c, t):
     x = sim.find(t)
     if x is None or x not in sim.units(x.side):
         return
-    row = sim.side[x.side]['support' if x in sim.side[x.side]['support'] else 'front']
-    n = SC.new(U + 'routed_troops', x.side, sim.new_id(), x.loc)
-    n.slot = x.slot
-    row[row.index(x)] = n
-    sim.temp.pop(x.id, None)
-    if x.side == c.side:
+    friendly = x.side == c.side
+    convert(sim, x, U + 'routed_troops', c.side)   # 通用转换：原位、按卡面数值、当回合不能行动
+    converted(sim, c.side)                         # 转敌方单位也算友方转换（用户确认：诺夫哥罗德触发）
+    if friendly:
         R.draw(sim, c.side, 2)
 
 

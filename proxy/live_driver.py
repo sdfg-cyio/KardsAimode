@@ -15,7 +15,12 @@ except Exception as e:  # 没有探针模块（如 Termux 环境）时退回旧 
     _IMPORT_ERR = e
 
 MAX_STEPS = 30          # 每回合最多动作数（防止死循环）
-HAND_TARGET = {'card_unit_gordon_highlanders'}   # 部署效果选自己手牌的单位（目标用 XActionHandTargetSelected 发）
+# 部署效果选自己手牌的单位（目标用 XActionHandTargetSelected 发，格式照戈登高地人抓包）
+HAND_TARGET = {'card_unit_gordon_highlanders', 'card_unit_kv_85', 'card_unit_336th_guards_naval'}
+# 部署时“开发”三选一的单位：选项按卡面顺序，补发 XActionCardToDrawSelected（格式照苏联英雄抓包：
+# cardTriggeringDraw = 打出的卡，cardToDraw = 序号，cardNameToSpawn = 选中的牌）
+DEVELOP = {'card_unit_740th_rifle_regiment': ('card_event_arctic_convoy', 'card_event_burning_sky', 'card_event_the_hammer')}
+NOT_LIVE = {'card_event_surveil'}   # 动作格式未抓包确认的牌：驱动不发（打法层也禁了，这里兜底）
 WAIT_TIMEOUT = 20.0     # 等客户端播完一个动作的最长时间
 
 
@@ -128,6 +133,11 @@ class LiveDriver:
                 return 'not_ai_turn'
             if tlog is None:
                 self._check_enemy_draw(st, ai_side)
+                self._track_units(st, ai_side)
+                # 难度加成在“有没有抽到牌”的判断之后再加（否则打印的牌会被当成回合开始抽到的）
+                if self._apply_buffs(st, ai_side):
+                    time.sleep(1.0)
+                    st = self.live.snapshot()
                 tlog = live_ai.TurnLog(st, ai_side)
                 tlog.no_deploy = no_deploy
                 # 跨回合记忆（每局一个 LiveDriver）：上回合是否部署过英国步兵（前进观察员）
@@ -161,6 +171,7 @@ class LiveDriver:
             if act is None:
                 # 记下回合结束时对方手牌数：下回合开始时对照“他回合开始有没有抽到牌”（_check_enemy_draw）
                 self.memo['en_hand_end'] = len(st['side'][live_ai.other(ai_side)]['hand'])
+                self.remember_units(st, ai_side)
                 self.memo['my_hand_end'] = len(st['side'][ai_side]['hand'])
                 # 诊断：结束回合时记下自己每个单位的状态和可选动作分数，便于查“为什么不打”
                 my = st['side'][ai_side]
@@ -211,15 +222,28 @@ class LiveDriver:
                 act = ('attack', act[1], en['hq'])
             kr_before = my['kredits']        # 发动作前的指挥点（判断是否生效用）
             x = {hq_key: str(my['hq'].df if my['hq'] else 20)}
+            if act[1].name in NOT_LIVE:
+                self.log(f'[live] {act[1]!r} 的动作格式还没确认，不发，结束回合')
+                return 'not_live'
             hand_tgt = act[0] == 'deploy' and act[1].name in HAND_TARGET and act[3]
             if hand_tgt:
                 act = act[:3] + (0,) + act[4:]   # 选手牌的部署效果：目标另发一条（抓包同玩家操作）
+            dev = act[0] == 'deploy' and act[1].name in DEVELOP
+            dev_k = act[4] if dev and len(act) > 4 else 0
+            if dev:
+                act = act[:4] + (0,)             # 开发的选择另发一条，出牌本身不带抉择序号
             at, ad = self.build(act, ai_side, x)
             rec = append(at, ad)
             if hand_tgt:
                 rec = append('XActionHandTargetSelected', {'0': str(act[1].id), '1': str(hand_tgt),
                                                            'cardSelectingTarget': act[1].id, 'targetCard': hand_tgt})
                 self.log(f'[live]   手牌目标 #{hand_tgt}')
+            if dev:
+                pick = DEVELOP[act[1].name][dev_k]
+                rec = append('XActionCardToDrawSelected', {'0': str(act[1].id), '1': str(dev_k), '2': card_db.code(pick),
+                                                           'cardTriggeringDraw': act[1].id, 'cardToDraw': dev_k,
+                                                           'cardNameToSpawn': pick})
+                self.log(f'[live]   开发：{pick.split("_", 2)[-1]}')
             if act[0] == 'deploy' and act[1].type == 'infantry' and \
                     (card_db.get(act[1].name) or {}).get('faction') == 'Britain':
                 self.memo['brit_now'] = True
@@ -257,6 +281,54 @@ class LiveDriver:
                     pass
         return 'max_steps'
 
+    def _track_units(self, st, ai_side):
+        """AI 回合开始：
+        - memo['ai_turn'] 第几个 AI 回合；memo['seen_turn'] {单位编号: 第一次出现的 AI 回合}（钢铁师活完整两回合）。
+          编号相同但卡名变了（转换）从零算
+        - memo['last_dead_any'/'last_dead_ground'] {方: 卡名}：上回合结束时还在场上、现在既不在场上也不在手里的
+          我方单位 = 被消灭了（KV-85 / 伊尔-10）。同一个格子换了新单位的是转换，不算。
+          几个一起没的分不出先后：4TP 回合结束自毁最早，优先取别的"""
+        m = self.memo
+        m['ai_turn'] = m.get('ai_turn', 0) + 1
+        my = st['side'][ai_side]
+        now = {u.id: u for u in my['support'] + my['front']}
+        names = m.setdefault('seen_name', {})
+        seen = m.setdefault('seen_turn', {})
+        for i, u in now.items():
+            if i not in seen or names.get(i) != u.name:
+                seen[i], names[i] = m['ai_turn'], u.name
+        prev = m.pop('my_units_end', None) or {}     # 只和上一个回合结束时比（没记到就不推断）
+        hand = {c.id for c in my['hand']}
+        slots = {(u.loc, u.slot) for u in now.values()}
+        gone = [(n, loc, slot, typ) for i, (n, loc, slot, typ) in prev.items()
+                if i not in now and i not in hand and (loc, slot) not in slots]
+        if gone:
+            gone.sort(key=lambda g: g[0] == 'card_unit_4tp')
+            m.setdefault('last_dead_any', {})[ai_side] = gone[0][0]
+            gr = [g for g in gone if g[3] in ('infantry', 'tank', 'artillery')]
+            if gr:
+                m.setdefault('last_dead_ground', {})[ai_side] = gr[0][0]
+
+    def _apply_buffs(self, st, ai_side):
+        """难度加成（KARDS_LEVEL，native/buffs.py）：回合开始调用客户端自带的开发者作弊函数。
+        总部加的防御记在 self.hq_bonus，local_match 结束回合时并进它记的 AI 总部值（客户端会校验）"""
+        import buffs, decks, random
+        lv = buffs.current()
+        if lv == 'normal':
+            return False
+        todo = buffs.plan_turn(lv, st, ai_side, self.memo, decks.ACTIVE, random)
+        if not todo:
+            return False
+        cheat = buffs.Cheat(self.live.ue)
+        self.hq_bonus = getattr(self, 'hq_bonus', 0) + buffs.apply(cheat, self.live.cf, st, ai_side, todo,
+                                                                   self.memo, self.log)
+        return True
+
+    def remember_units(self, st, ai_side):
+        """回合结束时记下我方场上单位（下回合开始比对谁被消灭了）"""
+        my = st['side'][ai_side]
+        self.memo['my_units_end'] = {u.id: (u.name, u.loc, u.slot, u.type) for u in my['support'] + my['front']}
+
     def _check_enemy_draw(self, st, ai_side):
         """对方回合开始有没有抽到牌：上回合结束时他 n 张，他回合里打出 p 张（不含埋反制），
         现在应该是 n - p + 1。少了那 1 张 = 牌库已经空了、他回合开始吃了一次疲惫伤害；n - p 已经 9 张 = 那张爆了。
@@ -279,7 +351,10 @@ class LiveDriver:
         now = len(st['side'][e]['hand'])
         base = n - p
         deck_n, fat = m.setdefault('deck_n', {}), m.setdefault('fatigue', {})
-        if base >= 9:
+        # 回合开始先抽牌、后出牌：爆没爆看抽牌那一刻的手牌数 n，不是 n - p
+        # （765012：AI 拖延战术把 3 个单位退回玩家手牌到 9 张，玩家抽牌爆掉后又打出 1 张，
+        #  这里按 n - p = 8 判成“没抽到 = 牌库空”，之后整局都以为对面牌库还剩 0 张）
+        if n >= 9:
             b = m.setdefault('burned', {})
             b[e] = b.get(e, 0) + 1
             deck_n[e] = max(0, deck_n.get(e, 1) - 1)

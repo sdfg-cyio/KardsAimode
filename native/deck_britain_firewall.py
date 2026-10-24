@@ -54,10 +54,28 @@ def _en_slots(sim, side):
     return sim.side[_e(side)]['max_kredits']
 
 
+NEUTRALIZERS = (E_ + 'firewall', E_ + 'dilemma')
+SPARE_K = 0.7       # 手里第 2 张防火墙/两难困境的留牌价值打 7 折，第 3 张再打 7 折
+LEAK_V = 0.4        # 对面下回合预计打到总部的每 1 点：总部是要堆到 30 的资源，不只是“会不会被斩杀”
+HIT_R = 2           # 一个单位已经打过几次总部，就多算几回合（最多 HIT_R）
+
+
 def _neutralizer_hold(base):
     """防火墙/两难困境留在手里的价值：对面槽越多，以后来的单位越大，越值得留着等大的。
-    前期（对面 2~4 槽）约 2.4~3.1：只有 2 攻以上、或总部危险时才贴；中期 6 槽以上约 3.9：要 3 攻以上"""
-    return lambda sim, c, ctx: base + 0.35 * min(10, _en_slots(sim, c.side)) - (1.5 if danger(ctx) else 0)
+    前期（对面 2~4 槽）约 2.4~3.1：只有 2 攻以上、或总部危险时才贴；中期 6 槽以上约 3.9：要 3 攻以上。
+    “等大的”只需要留一两张：同类牌越多，多出来的那张越不值得留（765012：手里攥着防火墙 + 两难困境，
+    看着 2 攻菲亚特每回合打总部，累计 17 点）"""
+    def f(sim, c, ctx):
+        k = sum(1 for h in sim.side[c.side]['hand'] if h.name in NEUTRALIZERS and h.id < c.id)
+        return (base + 0.35 * min(10, _en_slots(sim, c.side)) - (1.5 if danger(ctx) else 0)) * SPARE_K ** k
+    return f
+
+
+def neutral_rounds(sim, u, rounds):
+    """cards_britain.neutral_v 的回合数修正：已经反复打总部的单位，说明对面就是拿它来磨血、
+    我方也没东西解它，以后大概率还会接着打 -> 多算几回合（用户 2026-10-20：小单位不是不能忍，是不能一直忍）"""
+    hits = sim.memo.get('hq_hits', {}).get(u.id, 0)
+    return rounds + min(HIT_R, hits)
 
 
 def _cw_hold(sim, c, ctx):
@@ -109,6 +127,28 @@ HOLD = {
 }
 
 
+def _handled(sim, u):
+    """已经处理过的敌方单位：防火墙/两难困境贴过，或永久不能打总部"""
+    return u.id in sim.neutralized or getattr(u, 'no_hq', False)
+
+
+def _delay_ok(sim, c, ctx):
+    """拖延战术（前线全部撤退）的用法（用户 2026-10-20）：只用来防止被前线一锅端，不是真要把单位全退回去。
+    对面支援线满时，撤退的单位回到他手里 = 状态全部刷新，贴过的防火墙/两难困境白费
+    （765012：前线 3 个单位都处理过，支援线满，一张拖延战术全退回玩家手牌）。
+    所以：前线要有没处理过、还能打总部的单位才打；会把处理过的单位退回手牌的，总部危险时也不打"""
+    en = sim.side[_e(c.side)]
+    live = [u for u in en['front'] if not _handled(sim, u) and (u.atk or 0) > 0]
+    if not live:
+        return False
+    import sim_rules as R
+    room = R.SUPPORT_MAX - len(en['support'])
+    # 撤退按前线顺序进支援线，放不下的回手：只要有处理过的单位可能回手就不打（顺序不可控，保守算）
+    if len(en['front']) > room and any(_handled(sim, u) for u in en['front']):
+        return False
+    return danger(ctx) or sum(u.atk or 0 for u in live) >= 4
+
+
 def allow(sim, c, ctx):
     n = c.name
     my = sim.side[c.side]
@@ -118,7 +158,7 @@ def allow(sim, c, ctx):
     if n == METEOR:
         return my['kredits'] >= (c.cost or 0) + (c.op or 0)
     if n == E_ + 'delaying_tactics':
-        return bool(sim.side[_e(c.side)]['front'])
+        return _delay_ok(sim, c, ctx)
     if n in (E_ + 'shelling', E_ + 'monty'):
         return bool(_en_units(sim, c.side))
     if n == E_ + 'raid':
@@ -180,12 +220,17 @@ def allow_option(sim, c, t, k, ctx):
 
 
 def eval_extra(sim, ctx):
-    """总部堆到 30 的进度：20 以上每点额外 +0.3；到 30 且手里有英联邦再 +6（没有也 +2，抽到就能用）"""
+    """总部堆到 30 的进度：20 以上每点额外 +0.3；到 30 且手里有英联邦再 +6（没有也 +2，抽到就能用）；
+    减去下回合预计漏掉的血"""
     me = sim.me
     h = sim.side[me]['hq'].df
     v = 0.3 * max(0, min(h, FORT_HQ) - 20)
     if h >= FORT_HQ:
         v += 6.0 if _in_hand(sim, me, CW) else 2.0
+    # 下回合要漏的血：planner 的威胁项只看“会不会被斩杀”，总部 30 血时挨 6 点几乎不罚，
+    # 消防局（每次伤害降到 1）、防火墙的作用就体现不出来（765012：10 费空着不埋消防局）
+    import planner
+    v -= LEAK_V * planner.threat(sim)
     return v
 
 
@@ -219,3 +264,9 @@ KEEP = {E_ + 'naval_power', E_ + 'dilemma', E_ + 'firewall', E_ + 'convoy_175', 
 def keep(name, cost):
     """起手调度：留 1~2 费的防守牌、过牌、加槽、先锋连和阿尔斯特；英联邦和大牌换掉"""
     return name in KEEP
+
+
+# 难度加成（native/buffs.py）：OPENING = 老兵及以上的起手候选池（随机挑 4~5 张）；CORE = 地狱档手牌少时打印的核心牌
+OPENING = [E_ + 'firewall', E_ + 'dilemma', E_ + 'naval_power', E_ + 'convoy_175', E_ + 'raid',
+           U_ + '85_pioneer_company', E_ + 'dowding_system', E_ + 'national_fire_service']
+CORE = [E_ + 'firewall', E_ + 'the_commonwealth', E_ + 'convoy_175', E_ + 'war_bonds', E_ + 'in_hour_of_need']

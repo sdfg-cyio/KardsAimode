@@ -96,9 +96,16 @@ def replace_ai_deck(j, log):
         faction, loc = plan.MAIN, plan.HQ
         deck = {'name': f'AI-{plan.NAME}', 'main_faction': faction, 'ally_faction': plan.ALLY,
                 'card_back': sd[f'card_back_{ai}']}
-        # 起手按 5 张调度（后手的数量）；先手时 LocalMatch 会把最后一张放回牌库顶
-        hand, rest = _mulligan(cards[:5], cards[5:], plan.keep, log)
-        cards = hand + rest
+        import buffs                     # native/（_plan 已把路径加进 sys.path）
+        lv = buffs.current()
+        if buffs.LEVELS[lv]['opening'] and getattr(plan, 'OPENING', None):
+            # 老兵及以上：起手从卡组的候选池里随机挑 5 张（不再调度）；先手时 LocalMatch 会把最后一张放回牌库顶
+            cards = buffs.opening(cards, plan, random)
+            log(f'[ai_decks] 难度 {buffs.LEVELS[lv]["title"]}：起手候选池 -> ' + '、'.join(n[5:] for n in cards[:5]))
+        else:
+            # 起手按 5 张调度（后手的数量）；先手时 LocalMatch 会把最后一张放回牌库顶
+            hand, rest = _mulligan(cards[:5], cards[5:], plan.keep, log)
+            cards = hand + rest
     else:
         faction, cards = ai_deckgen.build()
         random.shuffle(cards)

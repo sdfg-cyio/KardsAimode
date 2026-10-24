@@ -163,3 +163,9 @@ KEEP = {U_ + '97th_rifles', U_ + '178th_guard_rifles', U_ + '55th_rifles', U_ + 
 def keep(name, cost):
     """起手调度：留低费守线牌，清场和大单位换掉"""
     return name in KEEP or ((cost or 0) <= 3 and not name.startswith(E_))
+
+
+# 难度加成（native/buffs.py）：OPENING = 老兵及以上的起手候选池（随机挑 4~5 张）；CORE = 地狱档手牌少时打印的核心牌
+OPENING = [U_ + '178th_guard_rifles', U_ + '97th_rifles', U_ + '55th_rifles', U_ + '289th_gatchina', U_ + 'fiat_g50',
+           U_ + '216th_guards', U_ + '9th_bersaglieri', U_ + 'bm_13n_us6', U_ + '11th_signal_battalion']
+CORE = [E_ + 'front_formation', U_ + '4th_guards_rifles', U_ + 'kv_1_1941', E_ + 'monastyr', U_ + '216th_guards']

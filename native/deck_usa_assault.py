@@ -188,3 +188,10 @@ KEEP = {E_ + 'the_war_machine', U_ + '13th_engineers_battalion', U_ + 'les_terri
 def keep(name, cost):
     """起手调度：留加槽、引擎和 2~3 费单位"""
     return name in KEEP
+
+
+# 难度加成（native/buffs.py）：OPENING = 老兵及以上的起手候选池（随机挑 4~5 张）；CORE = 地狱档手牌少时打印的核心牌
+OPENING = [E_ + 'the_war_machine', U_ + '13th_engineers_battalion', U_ + 'les_terribles', U_ + 'us_signal_corps',
+           U_ + '5e_cuirassier', U_ + '1st_infantry_regiment_us', U_ + 'fifth_ohio', E_ + 'production_order']
+CORE = [U_ + '116th_infantry_regiment', U_ + '2nd_michigan', U_ + 'les_terribles', U_ + '5th_rangers',
+        U_ + '1st_infantry_regiment_us']

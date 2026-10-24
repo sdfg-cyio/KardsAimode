@@ -202,6 +202,14 @@ class LocalMatch:
         self.log(f'[local {self.id}] 新 AI 回合结束：{result}')
         if self.match_status == 'finished':
             return   # 对局已结束，不再发结束回合
+        bonus, self.live.hq_bonus = getattr(self.live, 'hq_bonus', 0), 0
+        if bonus:
+            # 难度加成给 AI 总部加了防御：记的总部值跟着加，否则结束回合带的值和客户端对不上
+            st.hq_def[self.ai_side] += bonus
+            if self.ai_hq_client is not None:
+                self.ai_hq_client += bonus
+            x = {self.hq_key: str(hqv + bonus)}
+            self.log(f'[local {self.id}] 难度加成：AI 总部 +{bonus}，结束回合按 {hqv + bonus} 报')
         self._append('XActionEndOfTurn', ai, {**x, 'side': self.ai_side, 'reason': 'endTurnButton'},
                      delay=AI_STEP_DELAY)
 
@@ -319,8 +327,13 @@ class LocalMatch:
         for key in ('cardID', 'attackerCardID', 'defenderCardID', 'targetCardID'):
             if isinstance(ad.get(key), int):
                 self.seen_ids.add(ad[key])     # 打出/行动过的牌：已经不在牌库里（估牌库剩余用）
+        if at == 'XActionAttackCard' and self.live is not None and \
+                str(ad.get('defender_card_name', '')).startswith('card_location_'):
+            # 玩家单位打 AI 总部：按攻击者编号记次数（卡组据此判断“每回合都在漏的”单位，765012 菲亚特 17 点）
+            hits = self.live.memo.setdefault('hq_hits', {})
+            hits[ad.get('attackerCardID')] = hits.get(ad.get('attackerCardID'), 0) + 1
         if at == 'XActionStartOfTurn':
-            self.en_planted = {}               # 反制没触发到自己回合就失效，要重新花费激活（Kards规则.txt）
+            self.en_planted = {}             # 反制没触发到自己回合就失效，要重新花费激活（Kards规则.txt）
             if self.live is not None:
                 self.live.memo['en_played'] = 0
         elif at == 'XActionPlayCardFromHand' and str(ad.get('location', '')).startswith('Hand') and \

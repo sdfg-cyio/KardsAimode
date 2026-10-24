@@ -56,7 +56,9 @@ def destroy(sim, u, removed=False):
 
 
 def retreat(sim, u):
-    """前线单位撤退到支援线；支援线满则被移除"""
+    """前线单位撤退到支援线；支援线满则回到拥有者手牌（实测 765012：拖延战术把 3 个单位退回玩家手牌，
+    原来按“移除”算，模拟以为对面单位没了；手牌也满则丢弃）。回手 = 状态全部刷新（防火墙/两难困境白贴），
+    对方还能重新打出来：给拥有者记一半单位价值（同 cards_germany._bounce_value）"""
     d = sim.side[u.side]
     if u not in d['front']:
         return
@@ -64,6 +66,12 @@ def retreat(sim, u):
     room = SUPPORT_MAX - len(d['support']) - (sim.extra_sup if u.side == sim.me else 0)
     if room > 0:
         place(sim, u.side, u, 'support')
+        return
+    sim.temp.pop(u.id, None)
+    h = add_hand(sim, u.side, u.name, cid=u.id)
+    if h is not None:
+        # 按卡面数值算（场上被两难困境换成 0 攻的，回手后攻击也恢复了）
+        effects.gain(sim, u.side, 0.25 * ((h.atk or 0) + (h.df or 0)) + 0.2 * (h.cost or 0))
     else:
         effects.on_removed(sim, u)
 
@@ -301,6 +309,12 @@ def fight(sim, a, t, effect=False):
         return
     if effects.on_attacked(sim, t, a):
         return                           # 如 BM-13N：被攻击时撤退回手牌，这次攻击不结算
+    _fight(sim, a, t, effect)
+    for u, o in ((a, t), (t, a)):        # 对战后还活着（第 28 步兵团 +1+1）
+        effects.on_survived(sim, u, o)
+
+
+def _fight(sim, a, t, effect):
     counter = t.atk or 0
     if a.type == 'artillery' or (a.type == 'bomber' and t.type != 'fighter') or t.type == 'bomber' or a.shock:
         counter = 0

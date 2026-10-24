@@ -178,3 +178,9 @@ def keep(name, cost):
     """起手调度：留加费、过牌和低费单位，大牌换掉。
     前线与家乡不在 KEEP 里：起手拿到就换回牌库，让它第四回合额外抽出来"""
     return name in KEEP
+
+
+# 难度加成（native/buffs.py）：OPENING = 老兵及以上的起手候选池（随机挑 4~5 张）；CORE = 地狱档手牌少时打印的核心牌
+OPENING = [E_ + 'the_war_machine', E_ + 'buzz_bomb', U_ + '158_nachschub', U_ + 'arado_ar_196', E_ + 'for_freedom',
+           U_ + '22_infantry', U_ + '96_infantry_regiment', E_ + 'reich_research']
+CORE = [E_ + 'capitulation', U_ + 'maus', E_ + 'bismarck', U_ + 'railway_gun_leopold', U_ + 'henschel_he_129']

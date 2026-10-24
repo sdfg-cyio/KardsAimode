@@ -159,3 +159,10 @@ KEEP = {U_ + '30_infantry_regiment', U_ + 'panzer_ii_a', U_ + 'panzer_i_a', U_ +
 def keep(name, cost):
     """起手调度：留 1~3 费单位和装甲楔形阵；前线与家乡换回牌库，让它第四回合额外抽出来"""
     return name in KEEP
+
+
+# 难度加成（native/buffs.py）：OPENING = 老兵及以上的起手候选池（随机挑 4~5 张）；CORE = 地狱档手牌少时打印的核心牌
+# 前线与家乡不进起手池（第四回合额外抽出来才划算）
+OPENING = [U_ + '30_infantry_regiment', U_ + 'panzer_ii_a', U_ + 'panzer_i_a', U_ + 'sd_kfz_10_38', E_ + 'tank_wedge',
+           U_ + 'panther_a_zimm', U_ + 'blue_legion', U_ + '3_panzergrenadier', U_ + 'arado_ar_196']
+CORE = [U_ + 'panther_a_zimm', U_ + 'blue_legion', U_ + '3_panzergrenadier', E_ + 'tank_wedge', U_ + '30_infantry_regiment']

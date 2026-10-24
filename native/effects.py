@@ -39,6 +39,10 @@
 #   进入战场    ally_entered(sim, u, new)        u 一方有另一个单位进入战场（部署或刷出）后（永先者团）
 #   友方光环    aura(sim, u, x) -> (攻, 防)        u 在场时给同一方的其他单位 x 的加成（岚兵团），每个动作后重算
 #   费用变化    cost 钩子也用于洛林十字（敌方手牌越多越便宜）
+#   友方转换    ally_converted(sim, u, n)         u 一方转换了 n 张牌（一次转换效果算一次，诺夫哥罗德送摩托化步兵）
+#   词条光环    kw_aura(sim, u, x) -> {词条: True}  u 在场时给同一方的单位 x 加词条（909 团：友方步兵闪击）
+#   对战存活    survived(sim, u, t)              u 和 t 战斗后还活着（第 28 步兵团 +1+1）
+#   部署多选    deploy_choose_one = N（整数）      部署时 N 选 1（开发：740 团三选一），k = 0..N-1
 import sim_rules as R
 import card_rules
 from sim import SC, other
@@ -48,7 +52,8 @@ HOOKS = {'play', 'options', 'choose_one', 'deploy', 'deploy_targets', 'destroyed
          'dmg_bonus', 'dealt', 'keeps_shock', 'reduce', 'hq_floor', 'ally_destroyed', 'ally_draw', 'enemy_draw',
          'hand_enemy_draw', 'ally_deployed', 'enemy_destroyed', 'ally_operated', 'stat_bonus',
          'attacking', 'gone_after_attack', 'ally_order', 'enemy_order', 'ally_intel', 'intel_spawns', 'ally_forecast',
-         'shield_hq', 'atk_raised', 'deploy_choose_one', 'cost', 'after_deploy', 'ally_entered', 'aura'}
+         'shield_hq', 'atk_raised', 'deploy_choose_one', 'cost', 'after_deploy', 'ally_entered', 'aura',
+         'ally_converted', 'kw_aura', 'survived'}
 CARDS = {}             # 卡名 -> {钩子名: 函数或标记}
 
 
@@ -212,7 +217,8 @@ def deploy_targets(sim, c):
 
 def deploy_options(sim, c):
     """部署的 [(目标id, 抉择序号)]：部署时二选一的单位（第 5 游骑兵营）给两个序号"""
-    ks = (0, 1) if hook(c.name, 'deploy_choose_one') else (0,)
+    n = hook(c.name, 'deploy_choose_one')
+    ks = range(2 if n is True else n) if n else (0,)
     return [(t, k) for t in deploy_targets(sim, c) for k in ks]
 
 
@@ -310,6 +316,7 @@ def on_destroy(sim, u):
         g(sim, v, u)
     if u.type in ('infantry', 'tank', 'artillery'):
         sim.last_dead[u.side] = u               # 伊尔-10 亡计用
+    sim.last_dead_any = dict(getattr(sim, 'last_dead_any', {}), **{u.side: u})   # KV-85：上一个被消灭的友方单位（任何类型）
 
 
 def on_operated(sim, x, paid):
@@ -409,10 +416,57 @@ def on_attacking(sim, u, t):
 ENTER_HOOKS, ATTACK_HOOKS = [], []
 
 
+def apply_kw_aura(sim, side):
+    """词条光环（909 团：友方步兵闪击）：把 side 场上光环给的词条加到各单位上。
+    只加不减（光环单位离场后客户端会撤掉，下一步快照会反映）"""
+    hs = _holders(sim, side, 'kw_aura')
+    if not hs:
+        return
+    for x in sim.units(side):
+        for v, g in hs:
+            for k, on_ in (g(sim, v, x) or {}).items():
+                if on_:
+                    setattr(x, k, True)
+
+
+def convert(sim, x, name, src_side):
+    """转换（用户确认 2026-10-22）：x 原地变成 name——位置、格子不变，数值按卡面（受的伤恢复），
+    不触发部署和亡计；当回合不能行动，除非新单位有闪击。返回新单位。
+    “友方转换”由调用方按“一次效果算一次”调 converted()"""
+    if x is None or x not in sim.units(x.side):
+        return None
+    d = sim.side[x.side]
+    row = d['support'] if x in d['support'] else d['front']
+    n = SC.new(name, x.side, sim.new_id(), x.loc)
+    n.slot = x.slot
+    n.stat_b = (0, 0)
+    row[row.index(x)] = n
+    sim.temp.pop(x.id, None)
+    sim.temp_op.pop(x.id, None)
+    sim.deployed.add(n.id)                 # 当回合不能行动（闪击除外，legal 里统一判断）
+    apply_kw_aura(sim, x.side)
+    return n
+
+
+def converted(sim, side, n=1):
+    """side 一方完成了一次转换效果（不管转了几张，算一次）：诺夫哥罗德等“友方转换时”"""
+    if n <= 0:
+        return
+    for u, f in _holders(sim, side, 'ally_converted'):
+        f(sim, u, n)
+
+
+def on_survived(sim, u, t):
+    f = uhook(sim, u, 'survived')
+    if f and u in sim.units(u.side):
+        f(sim, u, t)
+
+
 def on_enter(sim, u):
     """单位进入战场（部署或刷出）"""
     for g in ENTER_HOOKS:
         g(sim, u)
+    apply_kw_aura(sim, u.side)
     for v, g in _holders(sim, u.side, 'ally_entered'):
         if v is not u:
             g(sim, v, u)
@@ -497,3 +551,4 @@ import cards_britain  # noqa: E402,F401
 import cards_japan  # noqa: E402,F401
 import cards_finland  # noqa: E402,F401
 import cards_france  # noqa: E402,F401
+import cards_convert  # noqa: E402,F401

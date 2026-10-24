@@ -2,8 +2,16 @@
 import struct, re
 from probe_client import Probe
 
-NAME_BLOCKS_OFF = 0xa187ec0      # FNamePool.Blocks（so 偏移，本版 libUnreal 固定）
+NAME_BLOCKS_OFF = 0xa187ec0      # FNamePool.Blocks（so 偏移，私服 1.58 版 libUnreal）
 OBJ_ITEM_SIZE = 24               # FUObjectItem 大小
+
+# 各版 libUnreal 的固定偏移：(名字, 名字表 Blocks, 对象表, UObject::ProcessEvent, AActor::ProcessEvent)
+# COMET 4.0.1 由 1.58 静态比对得出：代码整体 -0x5000，全局数据整体 -0xbe80（ProcessEvent 两处开头字节完全一致）
+PROFILES = [
+    ('1.58', 0xa187ec0, 0xa1e1e50, 0x3d32cc8, 0x5fcbfa8),
+    ('comet-4.0.1', 0xa17c040, 0xa1d5fd0, 0x3d2dcc8, 0x5fc6fa8),
+]
+PE_PROLOGUE = bytes.fromhex('fd7bbaa9fc6f01a9fa6702a9f85f03a9')  # UObject::ProcessEvent 开头 16 字节，用来认版本
 OBJ_CHUNK = 64 * 1024            # 每块元素数
 
 # UObjectBase 字段偏移
@@ -16,10 +24,25 @@ class UE:
     def __init__(self, probe=None):
         self.p = probe or Probe()
         self.base = self.p.base()
-        self.blocks_addr = self.base + NAME_BLOCKS_OFF
+        self.version = self._pick_profile()
+        self.blocks_addr = self.base + self.NAME_BLOCKS_OFF
         self.blocks = {}
         self.name_cache = {}
         self.objarr = None  # (Objects 指针, NumElements)
+
+    NAME_BLOCKS_OFF = NAME_BLOCKS_OFF
+
+    def _pick_profile(self):
+        """按 ProcessEvent 开头字节认出客户端版本，换上该版偏移；都对不上就沿用 1.58 的（老行为）"""
+        for name, nb, oa, pe_o, pe_a in PROFILES:
+            try:
+                if self.p.read(self.base + pe_o, len(PE_PROLOGUE)) == PE_PROLOGUE:
+                    self.NAME_BLOCKS_OFF, self.OBJARR_OFF = nb, oa
+                    self.PE_OBJ_OFF, self.PE_ACTOR_OFF = pe_o, pe_a
+                    return name
+            except Exception:
+                pass
+        return 'unknown'
 
     # ---------- 名字 ----------
     def block_data(self, i):

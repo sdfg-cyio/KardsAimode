@@ -236,3 +236,9 @@ KEEP = {E_ + 'protected_convoy', E_ + 'the_land_girls', U_ + 'm3a3_honey_desert'
 def keep(name, cost):
     """起手调度：留过牌、加槽、甜心、低费单位和流星（越早开始翻倍越好），其余换掉"""
     return name in KEEP
+
+
+# 难度加成（native/buffs.py）：OPENING = 老兵及以上的起手候选池（随机挑 4~5 张）；CORE = 地狱档手牌少时打印的核心牌
+OPENING = [E_ + 'protected_convoy', E_ + 'the_land_girls', U_ + 'm3a3_honey_desert', E_ + 'aans', U_ + 'meteor',
+           U_ + 'no_46_commando', U_ + 'middlesex_regiment', E_ + 'radar_alert']
+CORE = [U_ + 'meteor', E_ + 'the_land_girls', E_ + 'aans', U_ + 'cameronians', U_ + 'queens_own']
