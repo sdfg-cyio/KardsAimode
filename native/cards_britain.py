@@ -93,12 +93,21 @@ def _corps(sim, c, t, k):
         x.corps = (getattr(x, 'corps', 0) or 0) + 1
 
 
+def hp_trade(sim, u, x):
+    """可畏号/本土链的“与敌方单位战斗”（用户确认 2026-10-24）：双方按攻击力互相扣血，
+    无视任何条件（火炮/轰炸机不反击、伏击先手、冲击、重甲、被攻击时撤退都不管）；减伤光环照算"""
+    a, b = max(0, u.atk or 0), max(0, x.atk or 0)
+    for src, dst, n in ((u, x, a), (x, u, b)):
+        if n:
+            R.damage(sim, dst, n, src.side, by_unit=True, pierce=True)
+
+
 @on('play', P + 'hms_formidable')
 def _formidable(sim, c, t, k):
     u = sim.find(t)
     if u is None:
         return
-    u.atk = u.df
+    u.atk = u.df                         # 永久：之后还是这个攻击力
     foes = list(sim.units(other(c.side)))
     sim.random_used = sim.random_used or len(foes) > 1
     sim.rng.shuffle(foes)
@@ -106,7 +115,19 @@ def _formidable(sim, c, t, k):
         if u not in sim.units(u.side):
             break
         if x in sim.units(x.side):
-            R.fight(sim, u, x, effect=True)
+            hp_trade(sim, u, x)
+
+
+@on('play', P + 'chain_home')
+def _chain_home(sim, c, t, k):
+    u = sim.find(t)
+    if u is None:
+        return
+    u.atk = u.df
+    foes = list(sim.units(other(c.side)))
+    if foes:
+        sim.random_used = sim.random_used or len(foes) > 1
+        hp_trade(sim, u, sim.rng.choice(foes))
 
 
 @on('play', P + 'monty')
@@ -176,6 +197,7 @@ def _z_options(sim, c):
 card(P + 'z_special_unit', options=_z_options)
 card(P + 'monty', options=_targets)
 card(P + 'hms_formidable', options=lambda sim, c: [(u.id, 0) for u in sim.units(c.side)])
+card(P + 'chain_home', options=lambda sim, c: [(u.id, 0) for u in sim.units(c.side)])
 # 合成橡胶只给本回合还能攻击的流星（实测给了没意义的驻军，用户指出）：+4 后攻击，复制出来翻倍
 card(P + 'synthetic_rubber', options=lambda sim, c: [
     (u.id, 0) for u in sim.units(c.side)
@@ -338,3 +360,37 @@ card(U + 'garrison')                     # 回合开始没被攻击过就打总�
 card(U + '85_pioneer_company')            # 每回合第一张指令 -1 费：sim_rules 里打出第一张后把手里指令费用加回去
 card(U + 'royal_ulster_rifles',          # 友方总部受到伤害时改由它承受：sim_rules.damage 里转移
      shield_hq=True)
+
+
+# ---------- 英美米色团卡组（2026-10-24） ----------
+# 用户确认：西非旅 2 费（card_db.PATCH）；可畏号/本土链的战斗是纯血量交换；威尔士卫队/沙利文兄弟号可指向敌方；
+# 区域轰炸的兰开斯特当回合闪击能打，回合结束还活着就洗回牌库；桑德兰的海军牌 = 可畏号、沙利文兄弟号
+LANCASTER = U + 'lancaster'
+NAVAL = (P + 'hms_formidable', P + 'uss_sullivans')
+
+
+def _any_units(sim, c, lines=('support', 'front')):
+    """卡面“1 个目标/1 个单位”：我方单位 + 能被指向的敌方单位"""
+    return [u.id for u in sim.units(c.side) if u is not c] + enemy_targets(sim, c.side, lines)
+
+
+@on('play', P + 'area_bombardment')
+def _area_bombardment(sim, c, t, k):
+    from effects import spawn
+    u = spawn(sim, c.side, LANCASTER)
+    if u is not None:
+        u.blitz = True                       # 兰开斯特 Mk I 自带闪击：当回合就能打
+        gain(sim, c.side, 1.0)               # 回合结束洗回牌库：以后还能再抽到一次（8 费，打折）
+
+
+card(U + 'buffs', pointed=lambda sim, u, src: buff(u, 1, 1, sim, u))   # 被指令或部署指向时 +1+1（敌我都算）
+card(U + 'welsh_guards', deploy=lambda sim, c, t: buff(sim.find(t), 0, 1),
+     deploy_targets=lambda sim, c: _any_units(sim, c))
+card(U + 'frontier_force', deploy=lambda sim, c, t: R.add_hand(sim, c.side, U + 'garrison'))
+card(U + '2nd_west_africa', deploy=lambda sim, c, t: R.draw(sim, c.side, 1))   # 抽费用最低的指令（这套只有构筑内的牌，不重复）
+card(U + '70th_brigade')                 # 回合开始没被攻击过：抽 1 + 总部 +2，客户端结算，卡组按 persist 估值
+card(U + 'short_sunderland')             # 回合结束抽 1 张海军牌：客户端结算，卡组按 persist 估值
+card(P + 'aerial_reconaissance',         # 反制：对方部署单位时手里指令 -1 费（最低 1），价值看手里有几张 2 费以上指令
+     play=_counter(lambda sim, c: 0.6 * min(3, sum(1 for h in sim.side[c.side]['hand']
+                                                  if h.type == 'order' and (h.cost or 0) >= 2 and h is not c))))
+card(P + 'area_bombardment')

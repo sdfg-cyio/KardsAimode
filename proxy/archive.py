@@ -71,6 +71,10 @@ def record(method, path, req_body, status, headers, body, log=None, auth=False):
             n_keep = SAMPLES.get(key)
             if NOISY.match(key) and now - _last.get(key, 0) < THROTTLE:
                 return
+            if n_keep and not body:
+                # 开局样本接口回了空包（2026-10-25：COMET 服 GET /matches/v2/ 轮询回 200 空包）不录，
+                # 否则会把好样本覆盖掉，离线/自建训练局拿不到开局模板
+                return
             _last[key] = now
             rec = {'key': key, 'method': method, 'path': path, 'time': time.strftime('%Y-%m-%d %H:%M:%S'),
                    'request': _scrub(_text(req_body)), 'status': status,

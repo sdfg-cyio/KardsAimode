@@ -438,9 +438,7 @@ def _raiding(sim, c, t):
 
 @on('deploy', U + 'yokosuka_e14y')
 def _e14y(sim, c, t):
-    forecast(sim, c.side)
-    if sim.side[c.side]['kredits'] == 0:
-        R.draw(sim, c.side, 1)
+    forecast(sim, c.side)        # 2026-10 改版：删了“指挥点为 0 抽 1”，只剩预报
 
 
 @on('deploy', U + '15th_wolves_regiment')
@@ -644,4 +642,73 @@ card(U + 'storm_division', aura=lambda sim, u, x: (2, 0) if x.faction == 'Japan'
 card(U + 'aichi_d3a', stat_bonus=lambda sim, u: (2 * sum(1 for x in sim.units(u.side)
                                                          if x is not u and x.name == u.name), 0))
 card(U + 'ki_83')              # 我方回合开始时我抽 1、对面抽 2：在模拟之外，卡组按 persist 估
+
+
+# ---------- 日美飞燕卡组（2026-10-25） ----------
+# 用户确认：如日方升按双方合起来的最低攻击力，全部消灭；收缴 = 被消灭的敌方单位进我方手牌，
+# 费用 > 3 变 3、否则不变，攻防都变 1，保留词条。Ki-61 改：我方回合结束时剩 >= 7 点，敌方回合结束时花掉上场。
+# 激励部队、胁迫可以指向敌我；帝国之力弃掉的反制包括我方的
+@on('play', P + 'on_the_ascend')
+def _ascend(sim, c, t, k):
+    us = all_units(sim)
+    if not us:
+        return
+    low = min((u.atk or 0) for u in us)
+    for u in [u for u in us if (u.atk or 0) == low]:
+        R.destroy(sim, u)
+        if u.side != c.side:
+            h = R.add_hand(sim, c.side, u.name)          # 收缴：卡面词条保留（SC.new 按卡牌数据带上）
+            if h is not None:
+                h.atk, h.df = 1, 1
+                h.cost = min(3, h.cost if h.cost is not None else 3)
+
+
+@on('play', P + 'imperial_strength')
+def _imperial_strength(sim, c, t, k):
+    e = other(c.side)
+    if c.side == sim.me and sim.en_cm:
+        gain(sim, c.side, 2.0 * len(sim.en_cm))          # 弃掉对面挂着的反制（看得到的那部分）
+        sim.en_cm = set()
+    R.damage(sim, sim.side[e]['hq'], 2, c.side)
+
+
+@on('play', P + 'burst_of_fire')
+def _burst_of_fire(sim, c, t, k):
+    u = sim.find(t)
+    if u is None:
+        return
+    temp_atk(sim, u, 1, c)
+    if not u.fury:
+        u.fury = True
+        u.temp_fury = True                              # 只到回合结束：估值时不算永久奋战（卡组 persist 扣掉）
+
+
+@on('play', P + 'bolster_the_ranks')
+def _bolster(sim, c, t, k):
+    u = sim.find(t)
+    if u is None:
+        return
+    n = max(0, u.op or 0)
+    buff(u, n, n, sim, c)
+    u.op = 0
+
+
+@on('play', P + 'duress')
+def _duress(sim, c, t, k):
+    effects.suppress(sim, sim.find(t), c.side)
+
+
+def _any_target(sim, c, own=lambda u: True, enemy=lambda u: True):
+    return [(u.id, 0) for u in sim.units(c.side) if own(u)] + \
+        [(i, 0) for i in _enemies(sim, c) if enemy(sim.find(i))]
+
+
+card(P + 'burst_of_fire', options=lambda sim, c: _any_target(sim, c, own=lambda u: u.type == 'fighter',
+                                                             enemy=lambda u: False))
+card(P + 'bolster_the_ranks', options=lambda sim, c: _any_target(sim, c))
+card(P + 'duress', options=lambda sim, c: _any_target(sim, c))
+card(P + 'scouting_party', play=lambda sim, c, t, k: [spawn(sim, c.side, U + '33rd_recon') for _ in range(2)])
+card(U + '33rd_recon')                        # 受到伤害时抽 1：模拟里没有“受伤”时机，卡组按 persist 估
+card(U + '61st_infantry_regiment', destroyed=lambda sim, u: R.draw(sim, u.side, 1))
+card(U + 'ki_61_tony')                        # 敌方回合结束时花我方剩余 7 点自己上场：客户端结算，卡组按 eval_extra 估
 card(U + 'kokuras_sword')      # 敌方回合被消灭时送一个日本地面单位：在模拟之外，卡组按 persist 估

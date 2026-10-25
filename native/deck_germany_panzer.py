@@ -117,8 +117,9 @@ def _persist(sim, u, ctx):
     if n == U_ + 'blue_legion':
         return 0.6 * _r(ctx, 4) * max(1, min(3, len(sim.units(u.side)) - 1))
     if n == U_ + '3_panzergrenadier':
-        # 每有一个德国单位行动 +1+1：按每回合约 min(3, 德国单位数) 次、容易被集火打个折
-        return 0.4 * _r(ctx, 3) * max(1, min(3, len(_german(sim, u.side))))
+        # 每有一个“其他”德国单位行动 +1+1（2026-10 改版不含自己）：按每回合约 min(3, 其他德国单位数) 次、容易被集火打个折
+        others = sum(1 for x in _german(sim, u.side) if x is not u)
+        return 0.4 * _r(ctx, 3) * min(3, others)
     if n == U_ + 'panther_a_zimm':
         k = sim.op_count.get(u.id, 0) if u.id is not None else 0
         return 0.5 * (k + 1) * min(2, _r(ctx, 2))   # 下次行动攻防各 +(k+1)，行动费 0 每回合都能动

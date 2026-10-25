@@ -31,6 +31,16 @@ for c in _data:
         DB.setdefault(n, info)
 
 
+# 官方改版但社区站 data.json 还没跟上的数值，在这里覆盖（data.json 更新后可删对应条目）
+PATCH = {
+    'card_unit_238th_regiment': {'defense': 2},   # 2026-10 改版：2/3 -> 2/2
+    'card_unit_2nd_west_africa': {'kredits': 2},  # 用户确认 2026-10-24：现为 2 费（社区站仍是 1 费）
+}
+for _n, _p in PATCH.items():
+    if _n in DB:
+        DB[_n] = dict(DB[_n], **_p)
+
+
 # 内部卡名 -> 卡组码（动作里 "4"/"2"/"3" 字段要用）
 NAME2CODE = {}
 for _c, _ns in _codes.items():

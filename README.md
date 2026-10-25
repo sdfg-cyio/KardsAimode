@@ -1,4 +1,4 @@
-# WardsAimode：KARDS 私服人机对战
+# KardsAimode：KARDS 私服人机对战
 
 给 KARDS 私服客户端加回“训练（人机）”模式。代理和 AI 全部跑在手机的 Termux 里，不需要电脑。
 
@@ -18,8 +18,8 @@
 ```bash
 pkg update -y
 pkg install -y git python
-git clone https://github.com/sdfg-cyio/WardsAimode ~/WardsAimode
-bash ~/WardsAimode/install.sh
+git clone https://github.com/sdfg-cyio/KardsAimode ~/KardsAimode
+bash ~/KardsAimode/install.sh
 ```
 
 可选：执行 `termux-setup-storage` 授权存储，日志会写到 `/sdcard/Download/kardsai_logs/`，方便取出来反馈问题。
@@ -51,6 +51,8 @@ kards usa_ramp        # 固定某一套
 | britain_meteor | 英澳流星 | 阿尔托莉雅·潘德拉贡 | 突尼斯城 |
 | britain_firewall | 英美防火墙 | 大吉岭 | 伦敦 |
 | soviet_convert | 苏波转换 | 艾莉莎·米哈伊罗夫纳 | 莫斯科 |
+| britain_buffs | 英美米色团 | 千户 | 阿拉姆哈勒法 |
+| japan_air | 日美飞燕 | 信浓 | 马尼拉 |
 
 难度（只在本地人机局里生效；写在卡组名前面，不写 = 普通）：
 
@@ -85,7 +87,7 @@ kards offline              # 完全不连私服；也可以 kards offline usa_ra
 ## 更新
 
 ```bash
-cd ~/WardsAimode && git pull && bash install.sh
+cd ~/KardsAimode && git pull && bash install.sh
 ```
 
 ## 注意

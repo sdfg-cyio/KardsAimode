@@ -43,6 +43,7 @@
 #   词条光环    kw_aura(sim, u, x) -> {词条: True}  u 在场时给同一方的单位 x 加词条（909 团：友方步兵闪击）
 #   对战存活    survived(sim, u, t)              u 和 t 战斗后还活着（第 28 步兵团 +1+1）
 #   部署多选    deploy_choose_one = N（整数）      部署时 N 选 1（开发：740 团三选一），k = 0..N-1
+#   被指向      pointed(sim, u, src_side)         被任意一方的指令或部署效果指向时（米色团 +1+1），效果结算前触发
 import sim_rules as R
 import card_rules
 from sim import SC, other
@@ -53,7 +54,7 @@ HOOKS = {'play', 'options', 'choose_one', 'deploy', 'deploy_targets', 'destroyed
          'hand_enemy_draw', 'ally_deployed', 'enemy_destroyed', 'ally_operated', 'stat_bonus',
          'attacking', 'gone_after_attack', 'ally_order', 'enemy_order', 'ally_intel', 'intel_spawns', 'ally_forecast',
          'shield_hq', 'atk_raised', 'deploy_choose_one', 'cost', 'after_deploy', 'ally_entered', 'aura',
-         'ally_converted', 'kw_aura', 'survived'}
+         'ally_converted', 'kw_aura', 'survived', 'pointed'}
 CARDS = {}             # 卡名 -> {钩子名: 函数或标记}
 
 
@@ -249,9 +250,18 @@ def targeted(sim, x, src_side):
             f(sim, x)
 
 
+def pointed(sim, x, src_side):
+    """指令/部署效果指向单位 x（不分敌我）：米色团这类“被指向时”"""
+    if x is not None and x.type != 'location' and x in sim.units(x.side):
+        f = uhook(sim, x, 'pointed')
+        if f:
+            f(sim, x, src_side)
+
+
 def on_play(sim, c, t, k):
     if t:
         targeted(sim, sim.find(t), c.side)
+        pointed(sim, sim.find(t), c.side)
     CARDS[c.name]['play'](sim, c, t, k)
 
 
@@ -292,6 +302,8 @@ def on_deploy(sim, c, t, k=0):
     # 原来放在部署效果之后，目标已被移走就找不到，复制漏算
     if t:
         targeted(sim, sim.find(t), c.side)
+        if sim.find(t) is not c:
+            pointed(sim, sim.find(t), c.side)
     f = hook(c.name, 'deploy')
     if f:
         if hook(c.name, 'deploy_choose_one'):

@@ -26,7 +26,8 @@ PLANS = {'usa_ramp': 'deck_usa_ramp', 'soviet_control': 'deck_soviet_control', '
          'britain_meteor': 'deck_britain_meteor', 'japan_legion': 'deck_japan_legion',
          'britain_firewall': 'deck_britain_firewall', 'germany_panzer': 'deck_germany_panzer',
          'usa_assault': 'deck_usa_assault', 'japan_burst': 'deck_japan_burst',
-         'soviet_convert': 'deck_soviet_convert'}
+         'soviet_convert': 'deck_soviet_convert', 'britain_buffs': 'deck_britain_buffs',
+         'japan_air': 'deck_japan_air'}
 ACTIVE = GENERIC
 
 

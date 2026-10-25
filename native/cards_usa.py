@@ -120,6 +120,17 @@ card(P + 'for_freedom',
      play=lambda sim, c, t, k: (buff(sim.find(t), 1, 1), R.draw(sim, c.side, 1)),
      options=lambda sim, c: [(u.id, 0) for u in sim.units(c.side)])
 card(P + 'convoy_175', play=lambda sim, c, t, k: R.draw(sim, c.side, 2))
+# 英美米色团卡组（2026-10-24）：奎宁只能给步兵；沙利文兄弟号卡组顶那个单位 +1+1 看不到，按半张增益记
+card(P + 'quinine',
+     play=lambda sim, c, t, k: (buff(sim.find(t), 1, 2),
+                                setattr(sim.find(t), 'op', max(0, (sim.find(t).op or 0) - 1)) if sim.find(t) else None),
+     options=lambda sim, c: [(u.id, 0) for u in sim.units(c.side) if u.type == 'infantry'] +
+     [(i, 0) for i in enemy_targets(sim, c.side, ('support', 'front'), smoke_ok=True, by_order=True)
+      if sim.find(i).type == 'infantry'])
+card(P + 'uss_sullivans',
+     play=lambda sim, c, t, k: (buff(sim.find(t), 1, 1), gain(sim, c.side, 0.8), R.draw(sim, c.side, 1)),
+     options=lambda sim, c: [(u.id, 0) for u in sim.units(c.side)] +
+     [(i, 0) for i in enemy_targets(sim, c.side, ('support', 'front'), smoke_ok=True, by_order=True)])
 card(P + 'supply_shipment',
      play=lambda sim, c, t, k: buff(sim.find(t), 2, 3),
      options=lambda sim, c: [(u.id, 0) for u in sim.side[c.side]['front']])

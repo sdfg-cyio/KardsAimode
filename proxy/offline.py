@@ -222,15 +222,18 @@ def _items(method, req):
 def _usable(d):
     try:
         return bool(ai_decks.parse_deck_code(d.get('deck_code') or '')[0])
-    except KeyError:
-        return False                             # 卡组码里有不认识的卡
+    except (KeyError, IndexError, AttributeError):
+        # 卡组码里有不认识的卡，或卡组码不是 %%..|.. 格式（2026-10-25 实测：新建的空卡组 deck_code 为空/格式不同）
+        return False
 
 
 def _template():
     """开局样本：优先本录档目录里录到的，没有就用随包带的脱敏样本（COMET 服训练模式被关，录不到）"""
     r = _rec('GET /matches/v2/')
-    if r is not None:
-        return copy.deepcopy(r['body'])
+    body = (r or {}).get('body')
+    if isinstance(body, dict) and 'match_and_starting_data' in body:
+        return copy.deepcopy(body)
+    # 录到的是空包/坏包（2026-10-25 实测被空回应覆盖）：退回随包样本
     with open(os.path.join(ai_decks.W, 'match_template.json'), encoding='utf-8') as f:
         return json.load(f)
 

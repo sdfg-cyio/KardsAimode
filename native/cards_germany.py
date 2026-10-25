@@ -246,16 +246,17 @@ def _blue_legion(sim, u, x, paid):
     buff(x, paid, paid, sim, u)              # 行动后每花 1 点行动费 +1+1
 
 
-# 第 30 步兵团 / 第 3 装甲掷弹兵团：友方德国单位（含自己，用户确认 2026-10-16）行动后，行动费 -1（永久、最低 0）/ +1+1
+# 第 30 步兵团：友方德国单位（含自己，用户确认 2026-10-16）行动后，行动费 -1（永久、最低 0）
 @on('ally_operated', U + '30_infantry_regiment')
 def _30th(sim, u, x, paid):
     if x.faction == 'Germany' and u.op:
         u.op -= 1
 
 
+# 第 3 装甲掷弹兵团：其他友方德国单位行动后 +1+1（2026-10 改版：自己行动不再触发）
 @on('ally_operated', U + '3_panzergrenadier')
 def _3pzg(sim, u, x, paid):
-    if x.faction == 'Germany':
+    if x.faction == 'Germany' and x is not u:
         buff(u, 1, 1, sim, u)
 
 
