@@ -70,6 +70,9 @@ class LocalMatch:
         self.seen_ids = set()       # 动作记录里出现过的卡编号（估牌库剩余张数用）
         self.en_planted = {}        # 玩家本回合埋下的反制 {卡id: 卡名}
         if self.live is not None:
+            # AI 自己卡组的 编号 -> 牌名（客户端只给牌库里的卡编号；AI 知道自己卡组有什么，不看玩家的）
+            self.live.my_names = {c['card_id']: c.get('name') for c in
+                                  self.sd[f'starting_hand_{self.ai_side}'] + self.sd[f'deck_{self.ai_side}']}
             # 覆盖率：双方卡组里 AI 还不认识效果的牌（开局写一次日志）
             self.live.coverage({s: [c.get('name') for c in self.sd[f'starting_hand_{s}'] + self.sd[f'deck_{s}']]
                                 for s in ('left', 'right')}, self.ai_side, self.id)

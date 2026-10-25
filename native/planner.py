@@ -178,11 +178,31 @@ def evaluate(sim, plan, ctx):
     return v + sim.bonus - 0.05 * sim.n_actions
 
 
+def deck_draw_frac(sim, R_):
+    """剩下的对局里大约能把我方牌库抽到几成：每回合自然抽 1 张、按 R 回合算，再加一点过牌（+30%）"""
+    n = sim.deck_n.get(sim.me)
+    if not n:
+        return 0.0 if n == 0 else None
+    return min(1.0, 1.3 * R_ / n)
+
+
+def deck_units(sim, R_):
+    """“牌库里以后还能抽到的单位”张数（标准弹药、专家步兵团、牌库单位 -1 费这类用）。
+    读到真实牌库：牌库里的单位数 × 能抽到的比例；读不到：老的固定值 6"""
+    names = getattr(sim, 'my_deck', None)
+    frac = deck_draw_frac(sim, R_)
+    if names is None or frac is None:
+        return 6
+    units = sum(1 for n in names if n and (card_db.get(n) or {}).get('type') not in (None, 'order', 'countermeasure'))
+    unknown = sum(1 for n in names if not n)
+    return (units + 0.5 * unknown) * frac
+
+
 def make_ctx(sim, plan):
     my, en = sim.side[sim.me], sim.side[other(sim.me)]
     H, E = my['hq'].df, en['hq'].df
     R_ = max(3, min(10, min(H, E) / 2.5))
-    ctx = {'H': H, 'E': E, 'S': my['max_kredits'], 'R': R_, 'deck_units': 6,
+    ctx = {'H': H, 'E': E, 'S': my['max_kredits'], 'R': R_, 'deck_units': deck_units(sim, R_),
            # 加槽估值：卡组可以给更长的时间跨度（加费卡组对局拖得长）和更高的指挥点价值
            # 时间跨度随对局进程缩短（用槽数当进度：6 槽以后每多 1 槽少算 1 回合），
            # 否则后期 12 槽以上的“永久加槽”会被高估（实测：后期没压力时研发选了深水炸弹）

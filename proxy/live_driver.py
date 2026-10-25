@@ -31,6 +31,7 @@ class LiveDriver:
         self.factory = factory or Live   # 测试时可换成假的场面源
         self.memo = {}                   # 跨回合的对局记忆（军司令部标记、上回合是否部署英国步兵）
         self.seen_ids = set()            # 快照里见过的卡编号（估牌库剩余张数）
+        self.my_names = {}               # AI 自己卡组的 卡编号 -> 牌名（local_match 开局给）
 
     def coverage(self, decks, ai_side, match_id=''):
         """开局：双方卡组里 AI 还不认识效果的牌（只写日志）"""
@@ -161,6 +162,17 @@ class LiveDriver:
                 tlog.gone |= set(self.memo['planted'])
                 if no_deploy:
                     self.log('[live] 对方上回合打了提尔皮茨/U-99：本回合不部署')
+            # 每一步都用客户端真实牌库张数刷新（本回合中途抽牌/塞牌后模拟要跟上）
+            real = {s: st['side'][s].get('deck_n') for s in ('left', 'right')}
+            if all(isinstance(v, int) for v in real.values()):
+                self.memo['deck_n'] = real
+                self.memo['deck_empty'] = {s for s, v in real.items() if v == 0}
+            # AI 自己牌库里有哪些牌（按开局卡组表对编号；中途塞进来的牌对不上，记 None = 不知道）
+            ids = st['side'][ai_side].get('deck_ids')
+            if ids is not None and self.my_names:
+                self.memo['my_deck'] = [self.my_names.get(i) for i in ids]
+            else:
+                self.memo.pop('my_deck', None)
             # 见过的卡编号（手牌/场上）：估牌库剩余张数用（local_match._deck_left）
             self.seen_ids |= {c.id for d in st['side'].values() for k in ('hand', 'support', 'front') for c in d[k]}
             # 本回合已打出、但快照里还留在手牌的卡（反制卡埋下后仍在手牌列表里）：从手牌去掉，免得重复打
@@ -173,6 +185,11 @@ class LiveDriver:
                 self.memo['en_hand_end'] = len(st['side'][live_ai.other(ai_side)]['hand'])
                 self.remember_units(st, ai_side)
                 self.memo['my_hand_end'] = len(st['side'][ai_side]['hand'])
+                # 回合结束时我方所有卡编号（手牌 + 场上 + 埋下的反制）：下回合手里冒出的新编号 = 抽到的牌
+                self.memo['my_ids_end'] = {c.id for k in ('hand', 'support', 'front') for c in st['side'][ai_side][k]} \
+                    | set(tlog.gone)
+                # 回合结束时双方真实牌库张数：下回合开始判断谁从空牌库抽牌（疲惫）
+                self.memo['deck_real_end'] = {s: st['side'][s].get('deck_n') for s in ('left', 'right')}
                 # 诊断：结束回合时记下自己每个单位的状态和可选动作分数，便于查“为什么不打”
                 my = st['side'][ai_side]
                 us = ' '.join(f'{u.name[10:24]}#{u.id}[{u.loc[:3]} 攻{int(bool(u.can_attack))}'
@@ -336,11 +353,42 @@ class LiveDriver:
         m = self.memo
         if not m.get('deck_known'):
             return                           # 没有开局牌库信息（测试用的假场面）：不推断
-        # AI 自己：上回合结束时 k 张，现在还是 k 张 = 自己牌库空了（对方回合里改动我方手牌的效果少，忽略）
+        real = {s: st['side'][s].get('deck_n') for s in ('left', 'right')}
+        if all(isinstance(v, int) for v in real.values()):
+            # 读到了客户端真实牌库张数（GetDeckByside）：直接用，不再推断。
+            # 疲惫：某方上次轮到我看时牌库已是 0，到现在又经过了他的一次回合开始抽牌（AI 自己 = 本回合开始；
+            # 对方 = 他上回合开始）——上次是 0、现在还是 0 就记一次（中途塞回牌的不算）
+            last = m.get('deck_real_end') or {}
+            fat = m.setdefault('fatigue', {})
+            for s, v in real.items():
+                if last.get(s) == 0 and v == 0:
+                    fat[s] = fat.get(s, 0) + 1
+                    self.log(f'[live] {"AI" if s == ai_side else "对方"}牌库已空（客户端张数 0），第 {fat[s]} 次疲惫伤害')
+            if m.get('deck_n') != real:
+                self.log(f'[live] 牌库张数（客户端实读）{real}，估算是 {m.get("deck_n")}')
+            fc = {s: st['side'][s].get('fatigue_client') for s in ('left', 'right')}
+            if any(v for v in fc.values()) or any(v for v in m.get('fatigue', {}).values()):
+                # 客户端疲惫计数的含义（已受次数 / 下次伤害）还没核对过，先对照日志，不直接用
+                self.log(f'[live] 疲惫：推断 {m.get("fatigue")}，客户端 GetFatigueDamageBySide {fc}')
+            m['deck_n'] = dict(real)
+            m['deck_empty'] = {s for s, v in real.items() if v == 0}
+            for key in ('my_hand_end', 'my_ids_end', 'en_hand_end', 'en_played'):
+                m.pop(key, None)
+            return
+        # AI 自己：手里没冒出上回合结束时没见过的新编号 = 回合开始没抽到 = 自己牌库空了。
+        # 原来比手牌张数（还是 k 张就算空），对方回合让我方随机弃牌（U-375、歼灭）时抽 1 弃 1 张数不变，
+        # 误判牌库空（227487：t3 被弃一张后整局 deck_n=0，西非旅/土地女孩“抽牌=吃疲惫伤害”，满手牌不打）
         k = m.pop('my_hand_end', None)
-        if k is not None and k < 9 and len(st['side'][ai_side]['hand']) == k:
+        old = m.pop('my_ids_end', None)
+        hand = st['side'][ai_side]['hand']
+        if old is not None:
+            drew = any(c.id not in old for c in hand)
+        else:
+            drew = len(hand) != k
+        if k is not None and k < 9 and not drew:
             m.setdefault('deck_empty', set()).add(ai_side)
-            m.setdefault('fatigue', {})[ai_side] = m['fatigue'].get(ai_side, 0) + 1
+            fat = m.setdefault('fatigue', {})
+            fat[ai_side] = fat.get(ai_side, 0) + 1
             self.log(f'[live] AI 回合开始没抽到牌：自己牌库已空，第 {m["fatigue"][ai_side]} 次疲惫伤害')
         for s in m.get('deck_empty', ()):
             m.setdefault('deck_n', {})[s] = 0    # 确认空过的牌库一直是 0（除非之后又塞牌，塞的另算）

@@ -57,8 +57,11 @@ _DECK = None
 
 
 def deck_copies(sim, name):
-    """牌库里还剩几张同名牌（第 116 步兵团）：卡组里的张数 - 场上/手里看得到的"""
+    """牌库里还剩几张同名牌（第 116 步兵团）。读到真实牌库就直接数；
+    读不到时按 卡组里的张数 - 场上/手里看得到的（被消灭/弃掉的也会算成还在牌库，偏多）"""
     global _DECK
+    if getattr(sim, 'my_deck', None) is not None:
+        return sum(1 for n in sim.my_deck if n == name)
     if _DECK is None:
         import ai_decks
         cards, _ = ai_decks.parse_deck_code(DECK_CODE)

@@ -138,6 +138,8 @@ class Sim:
         # 牌库剩余张数 {side: n}（驱动按开局牌库和见过的牌估算；没有则不模拟抽空）、已受过几次疲惫伤害
         self.deck_n = dict(self.memo.get('deck_n', {}))
         self.fatigue = dict(self.memo.get('fatigue', {}))
+        # 我方牌库里的牌名列表（驱动按客户端牌库编号对出来；中途塞进来的是 None；没读到时整个是 None）。只读
+        self.my_deck = self.memo.get('my_deck')
         self.deck_add = {}                                      # 本步往牌库塞了几张（驱动累计）
         self.burned = {}                                        # 本步爆掉几张（驱动从牌库估算里扣掉）
         # 我方下回合开始额外多抽几张（战争债券）：本回合内跨步骤记在 TurnLog，结束回合时算爆牌要用

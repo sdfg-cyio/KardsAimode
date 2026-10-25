@@ -295,6 +295,18 @@ def _front_and_homeland(sim, c, t, k):
     # 张数、过牌量、每张价值随卡组不同，由卡组给（FH_ODD / FH_DRAWS / FH_V）；缺省是德美加费的数
     plan = sim.ctx.get('plan')
     odd, draws, per = getattr(plan, 'FH_ODD', 14), getattr(plan, 'FH_DRAWS', 18), getattr(plan, 'FH_V', 1.3)
+    names = getattr(sim, 'my_deck', None)
+    if names is not None and c.side == sim.me:
+        # 读到了真实牌库：直接数牌库里还剩几张奇数费德国牌 × 以后能抽到的比例（不再按槽数猜）
+        from sim import card_db
+        left = sum(1 for n in names if n and (card_db.get(n) or {}).get('faction') == 'Germany'
+                   and (card_db.get(n) or {}).get('kredits', 0) % 2 == 1)
+        # 以后还能抽几张：卡组给的 FH_DRAWS 是第 4 回合时的估计，随槽数推进线性减少；除以真实牌库张数
+        S = min(14, sim.side[c.side]['max_kredits'])
+        n = sim.deck_n.get(c.side) or len(names)
+        drawn = min(1.0, draws * max(0.1, (14 - S) / 10) / max(1, n)) if names else 0.0
+        gain(sim, c.side, per * left * drawn)
+        return
     S = min(14, sim.side[c.side]['max_kredits'])
     left = odd * max(0.0, (14 - S) / 11)          # 4 槽时约 0.9 × odd，13 槽时约 0.1 × odd
     drawn = min(1.0, draws / max(1.0, 39 - 5 - S))

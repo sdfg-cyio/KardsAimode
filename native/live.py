@@ -5,6 +5,7 @@ from ue import UE
 CF = '/Game/Blueprints/Cards/BP_CardFunctions.BP_CardFunctions_C'
 PM = '/Game/Blueprints/BP_PlayerMoves.BP_PlayerMoves_C'
 CARD = '/Script/kards.BaseCardObject'
+GS = '/Game/BP_GameState_Battle.BP_GameState_Battle_C'
 
 # 枚举（实测）
 SIDE = {'left': 1, 'right': 2}
@@ -46,9 +47,23 @@ class Live:
         self.f = {n: ue.find_func(CF, n) for n in (
             'GetCardsInHandBySide', 'GetCardsInSupportLineBySide', 'GetCardsInFrontlineBySide',
             'GetKreditsBySide', 'GetMaxKreditsBySide', 'DoesSideControlTheFrontline', 'IsLocationFull',
-            'GetLocationCardBySide', 'GetTurnNumber', 'GetPlayingSide', 'GetClientSide')}
+            'GetLocationCardBySide', 'GetTurnNumber', 'GetPlayingSide', 'GetClientSide', 'GetDeckByside')}
         self.cf_f = {n: ue.find_func(CARD, n) for n, _ in CARD_Q}
         self.q_running = ue.find_func(PM, 'IsAnyQueueRunning')
+        # 疲惫计数：在 BP_GameState_Battle 上（不是 BP_CardFunctions）；取第一个 side 类参数名
+        self.gs_fat = ue.find_func(GS, 'GetFatigueDamageBySide')
+        self.gs_fat_arg = None
+        if self.gs_fat:
+            ins = [p[0] for p in ue.func_info(self.gs_fat)[1] if not (p[4] & 0x100)]
+            self.gs_fat_arg = ins[0] if ins else None
+            if not self.gs_fat_arg:
+                self.gs_fat = None
+        # 多个实例时选调用能返回结果的那个（属于当前对局）
+        self.gs = None
+        if self.gs_fat:
+            for g in ue.instances('BP_GameState_Battle_C'):
+                if ue.call_many([(g, self.gs_fat, {self.gs_fat_arg: 1})])[0] is not None:
+                    self.gs = g
         cands = ue.instances('BP_CardFunctions_C')
         pms = ue.instances('BP_PlayerMoves_C')
         # 有多个实例时，选能取到本方手牌/指挥部的那个（属于当前对局关卡）
@@ -133,6 +148,33 @@ class Live:
         st['playing'] = {1: 'left', 2: 'right'}.get(play['OutPlayingSide'], '?')
         st['client'] = {1: 'left', 2: 'right'}.get(client['OutClientSide'], '?')
         st['front_full'] = ffull['isFull']
+        # 双方牌库真实张数（GetDeckByside 返回 int32 卡编号数组，只取张数；只读不改）。
+        # 读不到时为 None，驱动退回估算
+        # deck_ids 是卡编号（不是对象，不能拿去调取值函数）；牌名由驱动按开局卡组表对出来，只给 AI 看自己的
+        for s in ('left', 'right'):
+            st['side'][s]['deck_n'] = None
+            st['side'][s]['deck_ids'] = None
+        if f.get('GetDeckByside'):
+            try:
+                rr = ue.call_many([(cf, f['GetDeckByside'], {'side': SIDE[s]}) for s in ('left', 'right')])
+                for s, x in zip(('left', 'right'), rr):
+                    if x is not None:
+                        raw = x.get('deckCardIDs#raw')
+                        ids = list(struct.unpack('<%di' % raw[1], ue.p.read(raw[0], raw[1] * 4))) if raw else []
+                        st['side'][s]['deck_n'] = len(ids)
+                        st['side'][s]['deck_ids'] = ids
+            except RuntimeError:
+                pass
+        if self.gs_fat and self.gs:
+            # 客户端记的疲惫伤害（BP_GameState_Battle.GetFatigueDamageBySide），先只记日志核对含义
+            try:
+                arg = self.gs_fat_arg
+                rr = ue.call_many([(self.gs, self.gs_fat, {arg: SIDE[s]}) for s in ('left', 'right')])
+                for s, x in zip(('left', 'right'), rr):
+                    v = [y for k, y in (x or {}).items() if k != arg and isinstance(y, int)]
+                    st['side'][s]['fatigue_client'] = v[0] if v else None
+            except RuntimeError:
+                pass
         return st
 
 
